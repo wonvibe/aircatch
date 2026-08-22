@@ -45,6 +45,12 @@ pnpm exec supabase start   # 로컬 스택(Docker 필요)
 pnpm exec supabase db diff # 마이그레이션과 실제 스키마 차이 확인
 ```
 
+### Amadeus
+
+1. https://developers.amadeus.com 에서 가입 후 앱을 하나 만들면 무료 Self-Service(test) API 키(Client ID/Secret)가 발급된다.
+2. `.env`의 `AMADEUS_CLIENT_ID` / `AMADEUS_CLIENT_SECRET`에 채워 넣는다. `AMADEUS_ENV=test`가 기본값(운영 전환 시 `production`).
+3. 키가 없거나 Amadeus 호출이 실패해도 앱은 정상 동작한다 — `/watches` 생성은 성공하고 `baselinePrice`만 `null`로 남는다(`apps/api/src/watches/watches.service.ts`의 `captureBaseline` 참고). 공항 검색(`/airports/search`)도 시드 데이터에서 못 찾으면 빈 배열을 반환할 뿐 에러가 나지 않는다.
+
 ## 기술 스택
 
 - 클라이언트: React Native(Expo), Zustand

@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard';
@@ -15,6 +16,7 @@ import type { AuthenticatedUser } from '../common/interfaces/authenticated-reque
 import { WatchesService } from './watches.service';
 import { CreateWatchDto } from './dto/create-watch.dto';
 import { UpdateWatchDto } from './dto/update-watch.dto';
+import { GetPriceHistoryQueryDto } from './dto/get-price-history-query.dto';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('watches')
@@ -34,6 +36,15 @@ export class WatchesController {
   @Get(':id')
   findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.watchesService.findOneForUser(user.id, id);
+  }
+
+  @Get(':id/price-history')
+  getPriceHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: GetPriceHistoryQueryDto,
+  ) {
+    return this.watchesService.getPriceHistory(user.id, id, query.days ?? 60);
   }
 
   @Patch(':id')

@@ -39,3 +39,15 @@ export interface WatchSegmentRow {
 export type WatchRowWithSegments = WatchRow & {
   watch_segments: WatchSegmentRow[];
 };
+
+export interface PriceHistoryRow {
+  id: string;
+  watch_id: string;
+  checked_at: string;
+  depart_date: string;
+  return_date: string | null;
+  price: number;
+  currency: string;
+  carrier_code: string | null;
+  source: string;
+}

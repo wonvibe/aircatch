@@ -1,10 +1,8 @@
 // Hand-written mirror of supabase/migrations/20260823000000_init_schema.sql,
-// covering the tables the Phase 1 API touches (profiles, device_tokens,
-// airports, watches, watch_segments). There is no live Supabase project to
-// run `supabase gen types typescript` against yet — once one exists, this
-// file should be regenerated (see README) rather than hand-maintained, and
-// extended to price_history / amadeus_price_cache / notification_logs for
-// the Phase 2/3 cron work.
+// covering every table except notification_logs (added once Phase 3 wires
+// up the notification pipeline). There is no live Supabase project to run
+// `supabase gen types typescript` against yet — once one exists, this file
+// should be regenerated (see README) rather than hand-maintained.
 import { TripType, WatchStatus } from '../watches/watch-constants';
 
 export interface Database {
@@ -200,6 +198,72 @@ export interface Database {
             referencedColumns: ['id'];
           },
         ];
+      };
+      price_history: {
+        Row: {
+          id: string;
+          watch_id: string;
+          checked_at: string;
+          depart_date: string;
+          return_date: string | null;
+          price: number;
+          currency: string;
+          carrier_code: string | null;
+          raw_offer: unknown;
+          source: string;
+        };
+        Insert: {
+          id?: string;
+          watch_id: string;
+          checked_at?: string;
+          depart_date: string;
+          return_date?: string | null;
+          price: number;
+          currency?: string;
+          carrier_code?: string | null;
+          raw_offer?: unknown;
+          source?: string;
+        };
+        Update: {
+          id?: string;
+          watch_id?: string;
+          checked_at?: string;
+          depart_date?: string;
+          return_date?: string | null;
+          price?: number;
+          currency?: string;
+          carrier_code?: string | null;
+          raw_offer?: unknown;
+          source?: string;
+        };
+        Relationships: [];
+      };
+      amadeus_price_cache: {
+        Row: {
+          cache_key: string;
+          origin_iata: string;
+          destination_iata: string;
+          payload: unknown;
+          fetched_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          cache_key: string;
+          origin_iata: string;
+          destination_iata: string;
+          payload: unknown;
+          fetched_at?: string;
+          expires_at: string;
+        };
+        Update: {
+          cache_key?: string;
+          origin_iata?: string;
+          destination_iata?: string;
+          payload?: unknown;
+          fetched_at?: string;
+          expires_at?: string;
+        };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

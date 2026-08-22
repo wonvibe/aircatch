@@ -1,22 +1,47 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
+import { AmadeusService } from '../amadeus/amadeus.service';
+import { PriceCacheService } from '../amadeus/price-cache.service';
+import type { AmadeusOriginDestination } from '../amadeus/amadeus.types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateWatchDto } from './dto/create-watch.dto';
 import { UpdateWatchDto } from './dto/update-watch.dto';
 import {
+  PriceHistoryRow,
   WatchRow,
   WatchRowWithSegments,
   WatchSegmentRow,
 } from './watch.entities';
-import { WatchResponse, WatchSegmentResponse } from './watch.types';
+import {
+  PriceHistoryEntry,
+  WatchResponse,
+  WatchSegmentResponse,
+} from './watch.types';
+
+interface FoundFare {
+  departDate: string;
+  returnDate: string | null;
+  price: number;
+  currency: string;
+  carrierCode: string | null;
+  rawOffer: unknown;
+  source: 'amadeus_flight_dates' | 'amadeus_flight_offers';
+}
 
 @Injectable()
 export class WatchesService {
-  constructor(private readonly supabase: SupabaseService) {}
+  private readonly logger = new Logger(WatchesService.name);
+
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly amadeus: AmadeusService,
+    private readonly priceCache: PriceCacheService,
+  ) {}
 
   async create(userId: string, dto: CreateWatchDto): Promise<WatchResponse> {
     const client = this.supabase.getClient();
@@ -28,8 +53,9 @@ export class WatchesService {
       .single();
 
     if (inserted.error) this.handleDbError(inserted.error);
-    const watch = inserted.data;
+    let watch = inserted.data;
 
+    let segments: WatchSegmentRow[] = [];
     if (dto.tripType === 'multi_city') {
       const segmentRows = (dto.segments ?? []).map((segment) => ({
         watch_id: watch.id,
@@ -52,11 +78,15 @@ export class WatchesService {
         this.handleDbError(insertedSegments.error);
       }
 
-      const segments = insertedSegments.data as WatchSegmentRow[];
-      return this.toWatchResponse(watch, segments);
+      segments = insertedSegments.data;
     }
 
-    return this.toWatchResponse(watch, []);
+    // Best-effort: a watch is still useful without a baseline (the user sees
+    // it, Phase 3's cron will eventually populate baseline_price on its next
+    // pass), so a failed/unconfigured Amadeus call never fails the request.
+    watch = await this.captureBaseline(watch, segments);
+
+    return this.toWatchResponse(watch, segments);
   }
 
   async findAllForUser(userId: string): Promise<WatchResponse[]> {
@@ -74,18 +104,7 @@ export class WatchesService {
   }
 
   async findOneForUser(userId: string, id: string): Promise<WatchResponse> {
-    const result = await this.supabase
-      .getClient()
-      .from('watches')
-      .select('*, watch_segments(*)')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (result.error) this.handleDbError(result.error);
-    if (!result.data) throw new NotFoundException('Watch not found');
-
-    const row = result.data as WatchRowWithSegments;
+    const row = await this.getOwnedWatchRow(userId, id);
     return this.toWatchResponse(row, row.watch_segments);
   }
 
@@ -130,6 +149,199 @@ export class WatchesService {
 
     if (result.error) this.handleDbError(result.error);
     if (!result.data) throw new NotFoundException('Watch not found');
+  }
+
+  async getPriceHistory(
+    userId: string,
+    watchId: string,
+    days: number,
+  ): Promise<PriceHistoryEntry[]> {
+    // Ownership check first — also turns "not yours"/"doesn't exist" into a
+    // uniform 404 instead of leaking existence via an empty array.
+    await this.getOwnedWatchRow(userId, watchId);
+
+    const since = new Date(
+      Date.now() - days * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const result = await this.supabase
+      .getClient()
+      .from('price_history')
+      .select(
+        'id, checked_at, depart_date, return_date, price, currency, carrier_code, source',
+      )
+      .eq('watch_id', watchId)
+      .gte('checked_at', since)
+      .order('checked_at', { ascending: true });
+
+    if (result.error) this.handleDbError(result.error);
+    const rows = (result.data ?? []) as PriceHistoryRow[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      checkedAt: row.checked_at,
+      departDate: row.depart_date,
+      returnDate: row.return_date,
+      price: Number(row.price),
+      currency: row.currency,
+      carrierCode: row.carrier_code,
+      source: row.source,
+    }));
+  }
+
+  private async getOwnedWatchRow(
+    userId: string,
+    id: string,
+  ): Promise<WatchRowWithSegments> {
+    const result = await this.supabase
+      .getClient()
+      .from('watches')
+      .select('*, watch_segments(*)')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (result.error) this.handleDbError(result.error);
+    if (!result.data) throw new NotFoundException('Watch not found');
+
+    return result.data;
+  }
+
+  /** Fetches the current cheapest fare from Amadeus and records it as the
+   * watch's baseline. Never throws — a failure just leaves baseline_price
+   * null and gets logged, so watch creation always succeeds. */
+  private async captureBaseline(
+    watch: WatchRow,
+    segments: WatchSegmentRow[],
+  ): Promise<WatchRow> {
+    try {
+      const found =
+        watch.trip_type === 'multi_city'
+          ? await this.findMultiCityFare(watch, segments)
+          : await this.findSimpleFare(watch);
+
+      if (!found) return watch;
+      return await this.applyBaseline(watch, found);
+    } catch (err) {
+      this.logger.warn(
+        `Baseline capture failed for watch ${watch.id} (${watch.trip_type} ${watch.origin_iata ?? 'multi'}->${watch.destination_iata ?? 'multi'}): ${(err as Error).message}`,
+      );
+      return watch;
+    }
+  }
+
+  private async findSimpleFare(watch: WatchRow): Promise<FoundFare | null> {
+    const offers = await this.priceCache.getCheapestDates(
+      watch.origin_iata as string,
+      watch.destination_iata as string,
+      watch.depart_date_from,
+      watch.depart_date_to,
+    );
+    const cheapest = this.cheapest(offers, (offer) =>
+      Number(offer.price.total),
+    );
+    if (!cheapest) return null;
+
+    return {
+      departDate: cheapest.departureDate,
+      returnDate: cheapest.returnDate ?? null,
+      price: Number(cheapest.price.total),
+      currency: watch.currency,
+      carrierCode: null,
+      rawOffer: cheapest,
+      source: 'amadeus_flight_dates',
+    };
+  }
+
+  private async findMultiCityFare(
+    watch: WatchRow,
+    segments: WatchSegmentRow[],
+  ): Promise<FoundFare | null> {
+    if (segments.length < 2) return null;
+
+    // MVP samples a single representative date per leg (the start of its
+    // window) rather than scanning the whole range — flight-offers only
+    // accepts one date per request and multi-city itineraries are expensive
+    // to query. Wider date coverage is a Phase 3 concern (the cron job can
+    // afford to sample a few dates per leg on a slower cadence).
+    const originDestinations: AmadeusOriginDestination[] = segments
+      .slice()
+      .sort((a, b) => a.sequence_no - b.sequence_no)
+      .map((segment, index) => ({
+        id: String(index + 1),
+        originLocationCode: segment.origin_iata,
+        destinationLocationCode: segment.destination_iata,
+        departureDateTimeRange: { date: segment.date_from },
+      }));
+
+    const offers = await this.amadeus.searchFlightOffers(
+      originDestinations,
+      watch.adults,
+    );
+    const cheapest = this.cheapest(offers, (offer) =>
+      Number(offer.price.total),
+    );
+    if (!cheapest) return null;
+
+    const firstLeg = cheapest.itineraries[0]?.segments[0];
+
+    return {
+      departDate: firstLeg?.departure.at.slice(0, 10) ?? segments[0].date_from,
+      returnDate: null,
+      price: Number(cheapest.price.total),
+      currency: cheapest.price.currency,
+      carrierCode: firstLeg?.carrierCode ?? null,
+      rawOffer: cheapest,
+      source: 'amadeus_flight_offers',
+    };
+  }
+
+  private cheapest<T>(items: T[], priceOf: (item: T) => number): T | null {
+    return items.reduce<T | null>(
+      (min, item) => (!min || priceOf(item) < priceOf(min) ? item : min),
+      null,
+    );
+  }
+
+  private async applyBaseline(
+    watch: WatchRow,
+    found: FoundFare,
+  ): Promise<WatchRow> {
+    const client = this.supabase.getClient();
+
+    const historyInsert = await client.from('price_history').insert({
+      watch_id: watch.id,
+      depart_date: found.departDate,
+      return_date: found.returnDate,
+      price: found.price,
+      currency: found.currency,
+      carrier_code: found.carrierCode,
+      raw_offer: found.rawOffer,
+      source: found.source,
+    });
+    if (historyInsert.error) {
+      this.logger.warn(
+        `Failed to record price_history for watch ${watch.id}: ${historyInsert.error.message}`,
+      );
+    }
+
+    const watchUpdate = await client
+      .from('watches')
+      .update({
+        baseline_price: found.price,
+        baseline_captured_at: new Date().toISOString(),
+        baseline_offer_snapshot: found.rawOffer,
+      })
+      .eq('id', watch.id)
+      .select()
+      .maybeSingle();
+
+    if (watchUpdate.error || !watchUpdate.data) {
+      this.logger.warn(
+        `Failed to persist baseline for watch ${watch.id}: ${watchUpdate.error?.message}`,
+      );
+      return watch;
+    }
+    return watchUpdate.data;
   }
 
   private toWatchRow(userId: string, dto: CreateWatchDto) {
