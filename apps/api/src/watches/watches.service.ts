@@ -5,9 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
-import { AmadeusService } from '../amadeus/amadeus.service';
-import { PriceCacheService } from '../amadeus/price-cache.service';
-import type { AmadeusOriginDestination } from '../amadeus/amadeus.types';
+import { FareFinderService } from '../pricing/fare-finder.service';
+import type { FoundFare } from '../pricing/fare-finder.types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateWatchDto } from './dto/create-watch.dto';
 import { UpdateWatchDto } from './dto/update-watch.dto';
@@ -23,24 +22,13 @@ import {
   WatchSegmentResponse,
 } from './watch.types';
 
-interface FoundFare {
-  departDate: string;
-  returnDate: string | null;
-  price: number;
-  currency: string;
-  carrierCode: string | null;
-  rawOffer: unknown;
-  source: 'amadeus_flight_dates' | 'amadeus_flight_offers';
-}
-
 @Injectable()
 export class WatchesService {
   private readonly logger = new Logger(WatchesService.name);
 
   constructor(
     private readonly supabase: SupabaseService,
-    private readonly amadeus: AmadeusService,
-    private readonly priceCache: PriceCacheService,
+    private readonly fareFinder: FareFinderService,
   ) {}
 
   async create(userId: string, dto: CreateWatchDto): Promise<WatchResponse> {
@@ -82,8 +70,8 @@ export class WatchesService {
     }
 
     // Best-effort: a watch is still useful without a baseline (the user sees
-    // it, Phase 3's cron will eventually populate baseline_price on its next
-    // pass), so a failed/unconfigured Amadeus call never fails the request.
+    // it, and the Phase 3 cron will retry on its next pass), so a failed or
+    // unconfigured Amadeus call never fails the request.
     watch = await this.captureBaseline(watch, segments);
 
     return this.toWatchResponse(watch, segments);
@@ -216,11 +204,25 @@ export class WatchesService {
     try {
       const found =
         watch.trip_type === 'multi_city'
-          ? await this.findMultiCityFare(watch, segments)
-          : await this.findSimpleFare(watch);
+          ? await this.fareFinder.findMultiCityFare({
+              legs: segments.map((s) => ({
+                sequenceNo: s.sequence_no,
+                originIata: s.origin_iata,
+                destinationIata: s.destination_iata,
+                dateFrom: s.date_from,
+              })),
+              adults: watch.adults,
+            })
+          : await this.fareFinder.findSimpleFare({
+              origin: watch.origin_iata as string,
+              destination: watch.destination_iata as string,
+              dateFrom: watch.depart_date_from,
+              dateTo: watch.depart_date_to,
+              currency: watch.currency,
+            });
 
       if (!found) return watch;
-      return await this.applyBaseline(watch, found);
+      return await this.applyInitialBaseline(watch, found);
     } catch (err) {
       this.logger.warn(
         `Baseline capture failed for watch ${watch.id} (${watch.trip_type} ${watch.origin_iata ?? 'multi'}->${watch.destination_iata ?? 'multi'}): ${(err as Error).message}`,
@@ -229,80 +231,11 @@ export class WatchesService {
     }
   }
 
-  private async findSimpleFare(watch: WatchRow): Promise<FoundFare | null> {
-    const offers = await this.priceCache.getCheapestDates(
-      watch.origin_iata as string,
-      watch.destination_iata as string,
-      watch.depart_date_from,
-      watch.depart_date_to,
-    );
-    const cheapest = this.cheapest(offers, (offer) =>
-      Number(offer.price.total),
-    );
-    if (!cheapest) return null;
-
-    return {
-      departDate: cheapest.departureDate,
-      returnDate: cheapest.returnDate ?? null,
-      price: Number(cheapest.price.total),
-      currency: watch.currency,
-      carrierCode: null,
-      rawOffer: cheapest,
-      source: 'amadeus_flight_dates',
-    };
-  }
-
-  private async findMultiCityFare(
-    watch: WatchRow,
-    segments: WatchSegmentRow[],
-  ): Promise<FoundFare | null> {
-    if (segments.length < 2) return null;
-
-    // MVP samples a single representative date per leg (the start of its
-    // window) rather than scanning the whole range — flight-offers only
-    // accepts one date per request and multi-city itineraries are expensive
-    // to query. Wider date coverage is a Phase 3 concern (the cron job can
-    // afford to sample a few dates per leg on a slower cadence).
-    const originDestinations: AmadeusOriginDestination[] = segments
-      .slice()
-      .sort((a, b) => a.sequence_no - b.sequence_no)
-      .map((segment, index) => ({
-        id: String(index + 1),
-        originLocationCode: segment.origin_iata,
-        destinationLocationCode: segment.destination_iata,
-        departureDateTimeRange: { date: segment.date_from },
-      }));
-
-    const offers = await this.amadeus.searchFlightOffers(
-      originDestinations,
-      watch.adults,
-    );
-    const cheapest = this.cheapest(offers, (offer) =>
-      Number(offer.price.total),
-    );
-    if (!cheapest) return null;
-
-    const firstLeg = cheapest.itineraries[0]?.segments[0];
-
-    return {
-      departDate: firstLeg?.departure.at.slice(0, 10) ?? segments[0].date_from,
-      returnDate: null,
-      price: Number(cheapest.price.total),
-      currency: cheapest.price.currency,
-      carrierCode: firstLeg?.carrierCode ?? null,
-      rawOffer: cheapest,
-      source: 'amadeus_flight_offers',
-    };
-  }
-
-  private cheapest<T>(items: T[], priceOf: (item: T) => number): T | null {
-    return items.reduce<T | null>(
-      (min, item) => (!min || priceOf(item) < priceOf(min) ? item : min),
-      null,
-    );
-  }
-
-  private async applyBaseline(
+  /** Only ever called right after insert, when baseline_price is guaranteed
+   * null — so an unconditional overwrite is safe. The cron's ongoing
+   * "should this update the baseline / trigger a notification" logic lives
+   * in PriceMonitorService instead, since the two situations differ. */
+  private async applyInitialBaseline(
     watch: WatchRow,
     found: FoundFare,
   ): Promise<WatchRow> {

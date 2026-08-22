@@ -1,6 +1,5 @@
-// Hand-written mirror of supabase/migrations/20260823000000_init_schema.sql,
-// covering every table except notification_logs (added once Phase 3 wires
-// up the notification pipeline). There is no live Supabase project to run
+// Hand-written mirror of supabase/migrations/20260823000000_init_schema.sql —
+// every table. There is no live Supabase project to run
 // `supabase gen types typescript` against yet — once one exists, this file
 // should be regenerated (see README) rather than hand-maintained.
 import { TripType, WatchStatus } from '../watches/watch-constants';
@@ -262,6 +261,51 @@ export interface Database {
           payload?: unknown;
           fetched_at?: string;
           expires_at?: string;
+        };
+        Relationships: [];
+      };
+      notification_logs: {
+        Row: {
+          id: string;
+          watch_id: string;
+          user_id: string;
+          price_history_id: string | null;
+          previous_price: number;
+          new_price: number;
+          drop_amount: number;
+          drop_percent: number;
+          message: string;
+          status: 'sent' | 'failed';
+          expo_ticket_id: string | null;
+          sent_at: string;
+        };
+        Insert: {
+          id?: string;
+          watch_id: string;
+          user_id: string;
+          price_history_id?: string | null;
+          previous_price: number;
+          new_price: number;
+          drop_amount: number;
+          drop_percent: number;
+          message: string;
+          status?: 'sent' | 'failed';
+          expo_ticket_id?: string | null;
+          sent_at?: string;
+        };
+        Update: {
+          id?: string;
+          watch_id?: string;
+          user_id?: string;
+          price_history_id?: string | null;
+          previous_price?: number;
+          new_price?: number;
+          drop_amount?: number;
+          drop_percent?: number;
+          message?: string;
+          status?: 'sent' | 'failed';
+          expo_ticket_id?: string | null;
+          sent_at?: string;
         };
         Relationships: [];
       };
