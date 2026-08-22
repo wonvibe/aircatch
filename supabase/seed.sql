@@ -1,0 +1,4 @@
+-- Seed data for local development.
+-- Phase 1 will populate this with an initial `airports` dataset
+-- (IATA code, name, city, country) so airport search works without
+-- hitting the Amadeus Locations API on every keystroke.
