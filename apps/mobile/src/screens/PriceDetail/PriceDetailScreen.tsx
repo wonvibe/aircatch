@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { ErrorState, LoadingState } from '../../components/StateViews';
 import { Button } from '../../components/Button';
@@ -15,12 +15,13 @@ import type { AppStackScreenProps } from '../../navigation/types';
 
 const HISTORY_DAYS = 60;
 
-export function PriceDetailScreen({ route }: AppStackScreenProps<'PriceDetail'>) {
+export function PriceDetailScreen({ route, navigation }: AppStackScreenProps<'PriceDetail'>) {
   const { watchId } = route.params;
   const [watch, setWatch] = useState<Watch | null>(null);
   const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,6 +46,26 @@ export function PriceDetailScreen({ route }: AppStackScreenProps<'PriceDetail'>)
     const timeout = setTimeout(load, 0);
     return () => clearTimeout(timeout);
   }, [load]);
+
+  const confirmDelete = () => {
+    Alert.alert('여정 삭제', '이 여정과 알림 내역이 삭제됩니다. 계속할까요?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          setDeleting(true);
+          try {
+            await watchesApi.remove(watchId);
+            navigation.goBack();
+          } catch (err) {
+            setDeleting(false);
+            Alert.alert('삭제 실패', (err as Error).message);
+          }
+        },
+      },
+    ]);
+  };
 
   if (loading) {
     return (
@@ -101,6 +122,14 @@ export function PriceDetailScreen({ route }: AppStackScreenProps<'PriceDetail'>)
 
         <Text style={styles.sectionTitle}>목표가 이하 추천 일정</Text>
         <RecommendedDatesList history={history} targetPrice={watch.targetPrice} currency={watch.currency} />
+
+        <Button
+          label="여정 삭제"
+          variant="danger"
+          loading={deleting}
+          onPress={confirmDelete}
+          style={styles.deleteButton}
+        />
       </ScrollView>
     </ScreenContainer>
   );
@@ -135,5 +164,8 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
+  },
+  deleteButton: {
+    marginTop: spacing.xl,
   },
 });
