@@ -39,7 +39,10 @@ export function AirportSearchInput({ label, value, onChange, error }: Props) {
       airportsApi
         .search(query.trim())
         .then(setResults)
-        .catch(() => setResults([]))
+        .catch((err) => {
+          console.warn('[AirportSearchInput] search failed:', (err as Error).message);
+          setResults([]);
+        })
         .finally(() => setLoading(false));
     }, 300);
 

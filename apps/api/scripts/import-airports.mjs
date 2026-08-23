@@ -31,26 +31,41 @@ async function fetchJson(url) {
   return res.json();
 }
 
+// The app's UI and target users are Korean (PRD/screens are all Korean),
+// so pull the `ko` locale of Travelpayouts' reference data — searching
+// "인천"/"방콕" against English-only names never matches (this bit us once:
+// the table was first imported with `en` data, silently breaking airport
+// search for anyone typing in Korean).
+const LOCALE = 'ko';
+
 async function main() {
-  console.log('Fetching Travelpayouts reference data (airports, cities, countries)...');
+  console.log(`Fetching Travelpayouts reference data (airports, cities, countries; locale=${LOCALE})...`);
   const [airports, cities, countries] = await Promise.all([
-    fetchJson('https://api.travelpayouts.com/data/en/airports.json'),
-    fetchJson('https://api.travelpayouts.com/data/en/cities.json'),
-    fetchJson('https://api.travelpayouts.com/data/en/countries.json'),
+    fetchJson(`https://api.travelpayouts.com/data/${LOCALE}/airports.json`),
+    fetchJson(`https://api.travelpayouts.com/data/${LOCALE}/cities.json`),
+    fetchJson(`https://api.travelpayouts.com/data/${LOCALE}/countries.json`),
   ]);
 
-  const cityNameByCode = new Map(cities.map((c) => [c.code, c.name]));
-  const countryNameByCode = new Map(countries.map((c) => [c.code, c.name]));
+  // The `ko` locale doesn't have a Korean translation for every entry —
+  // some come back with name: null. Fall back to the English translation,
+  // then the raw code, so we never violate the not-null columns below.
+  const cityNameByCode = new Map(cities.map((c) => [c.code, c.name ?? c.name_translations?.en ?? c.code]));
+  const countryNameByCode = new Map(
+    countries.map((c) => [c.code, c.name ?? c.name_translations?.en ?? c.code]),
+  );
 
   const rows = airports
     .filter((airport) => airport.flightable && airport.code)
-    .map((airport) => ({
-      iata_code: airport.code,
-      name: airport.name,
-      city: cityNameByCode.get(airport.city_code) ?? airport.name,
-      country: countryNameByCode.get(airport.country_code) ?? airport.country_code ?? '',
-      source: 'travelpayouts',
-    }));
+    .map((airport) => {
+      const name = airport.name ?? airport.name_translations?.en ?? airport.code;
+      return {
+        iata_code: airport.code,
+        name,
+        city: cityNameByCode.get(airport.city_code) ?? name,
+        country: countryNameByCode.get(airport.country_code) ?? airport.country_code ?? '',
+        source: 'travelpayouts',
+      };
+    });
 
   console.log(`Upserting ${rows.length} flightable airports into Supabase...`);
 
