@@ -71,7 +71,7 @@ export class WatchesService {
 
     // Best-effort: a watch is still useful without a baseline (the user sees
     // it, and the Phase 3 cron will retry on its next pass), so a failed or
-    // unconfigured Amadeus call never fails the request.
+    // unconfigured Travelpayouts call never fails the request.
     watch = await this.captureBaseline(watch, segments);
 
     return this.toWatchResponse(watch, segments);
@@ -194,9 +194,9 @@ export class WatchesService {
     return result.data;
   }
 
-  /** Fetches the current cheapest fare from Amadeus and records it as the
-   * watch's baseline. Never throws — a failure just leaves baseline_price
-   * null and gets logged, so watch creation always succeeds. */
+  /** Fetches the current cheapest fare from Travelpayouts and records it as
+   * the watch's baseline. Never throws — a failure just leaves
+   * baseline_price null and gets logged, so watch creation always succeeds. */
   private async captureBaseline(
     watch: WatchRow,
     segments: WatchSegmentRow[],
@@ -211,13 +211,15 @@ export class WatchesService {
                 destinationIata: s.destination_iata,
                 dateFrom: s.date_from,
               })),
-              adults: watch.adults,
+              currency: watch.currency,
             })
           : await this.fareFinder.findSimpleFare({
               origin: watch.origin_iata as string,
               destination: watch.destination_iata as string,
               dateFrom: watch.depart_date_from,
               dateTo: watch.depart_date_to,
+              returnDateFrom: watch.return_date_from ?? undefined,
+              returnDateTo: watch.return_date_to ?? undefined,
               currency: watch.currency,
             });
 

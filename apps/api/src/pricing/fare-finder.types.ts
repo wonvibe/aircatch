@@ -5,7 +5,7 @@ export interface FoundFare {
   currency: string;
   carrierCode: string | null;
   rawOffer: unknown;
-  source: 'amadeus_flight_dates' | 'amadeus_flight_offers';
+  source: 'travelpayouts_calendar' | 'travelpayouts_multi_city_sum';
 }
 
 export interface SimpleFareQuery {
@@ -13,6 +13,13 @@ export interface SimpleFareQuery {
   destination: string;
   dateFrom: string;
   dateTo: string;
+  // Only used when both are present (round_trip watches don't require
+  // return dates — see CreateWatchDto). Priced as outbound + cheapest
+  // return leg found separately; Travelpayouts has no combined round-trip
+  // quote endpoint, so this is a sum-of-legs approximation, same idea as
+  // multi-city below.
+  returnDateFrom?: string;
+  returnDateTo?: string;
   currency: string;
 }
 
@@ -25,5 +32,5 @@ export interface MultiCityLeg {
 
 export interface MultiCityFareQuery {
   legs: MultiCityLeg[];
-  adults: number;
+  currency: string;
 }

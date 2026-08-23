@@ -17,7 +17,7 @@ import {
 const MIN_DROP_THRESHOLD_KRW = 5_000;
 // The hour is sliced into 12 five-minute windows; a watch is checked in
 // exactly one of them, so the whole active set is swept once per hour
-// without hammering Amadeus/the DB all at minute 0.
+// without hammering Travelpayouts/the DB all at minute 0.
 const SIMPLE_SLOT_COUNT = 12;
 
 export interface SweepResult {
@@ -46,9 +46,9 @@ export class PriceMonitorService {
     return this.checkAll(due.map((watch) => ({ watch, segments: [] })));
   }
 
-  // Flight-offers (multi_city) is a heavier, more expensive call than
-  // flight-dates and multi-city watches are expected to be low-volume, so
-  // they get their own slower sweep instead of sharing the 5-minute slots.
+  // Multi-city pricing costs one call per leg (Travelpayouts has no combined
+  // multi-city quote) and multi-city watches are expected to be low-volume,
+  // so they get their own slower sweep instead of sharing the 5-minute slots.
   @Cron('0 */4 * * *')
   async runMultiCitySweep(): Promise<SweepResult> {
     const rows = await this.fetchActiveMultiCityWatches();
@@ -106,13 +106,15 @@ export class PriceMonitorService {
               destinationIata: s.destination_iata,
               dateFrom: s.date_from,
             })),
-            adults: watch.adults,
+            currency: watch.currency,
           })
         : await this.fareFinder.findSimpleFare({
             origin: watch.origin_iata as string,
             destination: watch.destination_iata as string,
             dateFrom: watch.depart_date_from,
             dateTo: watch.depart_date_to,
+            returnDateFrom: watch.return_date_from ?? undefined,
+            returnDateTo: watch.return_date_to ?? undefined,
             currency: watch.currency,
           });
 

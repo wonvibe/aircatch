@@ -1,14 +1,14 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { InternalSecretGuard } from '../common/guards/internal-secret.guard';
 import { PriceMonitorService } from '../cron/price-monitor.service';
-import { AmadeusService } from '../amadeus/amadeus.service';
+import { TravelpayoutsService } from '../travelpayouts/travelpayouts.service';
 
 @UseGuards(InternalSecretGuard)
 @Controller('internal')
 export class InternalController {
   constructor(
     private readonly priceMonitor: PriceMonitorService,
-    private readonly amadeus: AmadeusService,
+    private readonly travelpayouts: TravelpayoutsService,
   ) {}
 
   /** Manually runs both price-check sweeps once, bypassing the cron
@@ -18,11 +18,11 @@ export class InternalController {
     return this.priceMonitor.runOnce();
   }
 
-  /** In-process call counts since this API instance started (not persisted
-   * — resets on restart). Meant for a quick "are we anywhere near the free
-   * tier's monthly quota" check, not exact accounting. */
-  @Get('amadeus/quota-status')
-  getAmadeusQuotaStatus() {
-    return this.amadeus.getUsageStats();
+  /** In-process call count since this API instance started (not persisted —
+   * resets on restart). Travelpayouts has no monthly quota, only a 10 req/s
+   * rate limit, so this is call-volume visibility, not a quota warning. */
+  @Get('travelpayouts/usage-status')
+  getTravelpayoutsUsageStatus() {
+    return this.travelpayouts.getUsageStats();
   }
 }

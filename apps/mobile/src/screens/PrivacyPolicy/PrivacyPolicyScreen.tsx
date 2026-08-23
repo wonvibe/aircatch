@@ -21,7 +21,7 @@ const SECTIONS: { title: string; body: string }[] = [
   {
     title: '3. 제3자 제공 및 위탁',
     body:
-      '가격 조회를 위해 Amadeus(항공 데이터 API)에 출발지·도착지·날짜만 전달하며, 이용자를 식별할 수 있는 정보는 전달하지 않습니다. 인증·데이터 저장은 Supabase, 푸시 알림 발송은 Expo(Google FCM/Apple APNs 경유)를 통해 처리됩니다.',
+      '가격 조회를 위해 Travelpayouts(항공 데이터 API)에 출발지·도착지·날짜만 전달하며, 이용자를 식별할 수 있는 정보는 전달하지 않습니다. 인증·데이터 저장은 Supabase, 푸시 알림 발송은 Expo(Google FCM/Apple APNs 경유)를 통해 처리됩니다.',
   },
   {
     title: '4. 보관 기간',

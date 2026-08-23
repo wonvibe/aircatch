@@ -1,7 +1,7 @@
-// Hand-written mirror of supabase/migrations/20260823000000_init_schema.sql —
-// every table. There is no live Supabase project to run
-// `supabase gen types typescript` against yet — once one exists, this file
-// should be regenerated (see README) rather than hand-maintained.
+// Hand-written mirror of every migration in supabase/migrations/ — kept in
+// sync by hand rather than `supabase gen types typescript` so far. A real
+// Supabase project now exists (see README); regenerating this file from it
+// is a reasonable follow-up instead of continuing to hand-maintain it.
 import { TripType, WatchStatus } from '../watches/watch-constants';
 
 export interface Database {
@@ -243,7 +243,7 @@ export interface Database {
         };
         Relationships: [];
       };
-      amadeus_price_cache: {
+      price_cache: {
         Row: {
           cache_key: string;
           origin_iata: string;

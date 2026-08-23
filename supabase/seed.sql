@@ -1,7 +1,8 @@
 -- Local development seed data.
 -- A small, real starter set so /airports/search has something to return
--- before the Amadeus Locations API is wired up in Phase 2 (which will
--- upsert into this same table on cache misses, source='amadeus').
+-- without running the full import (apps/api/scripts/import-airports.mjs),
+-- which upserts every flightable airport from Travelpayouts' public
+-- reference data — see README's Travelpayouts section.
 
 insert into public.airports (iata_code, name, city, country, latitude, longitude, source)
 values

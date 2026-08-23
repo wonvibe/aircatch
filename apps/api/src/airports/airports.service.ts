@@ -1,24 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { AmadeusService } from '../amadeus/amadeus.service';
-import type { AmadeusLocation } from '../amadeus/amadeus.types';
+import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AirportRow } from './airport.entities';
 import { AirportResponse } from './airport.types';
 
 @Injectable()
 export class AirportsService {
-  private readonly logger = new Logger(AirportsService.name);
-
-  constructor(
-    private readonly supabase: SupabaseService,
-    private readonly amadeus: AmadeusService,
-  ) {}
+  constructor(private readonly supabase: SupabaseService) {}
 
   /**
-   * Matches against the seeded/previously-upserted `airports` table first;
-   * on a miss, falls back to the Amadeus Locations API and caches whatever
-   * it finds (source='amadeus') so the next search for the same term is
-   * local again.
+   * Matches against the `airports` table only. There used to be a live
+   * external fallback here (Amadeus Locations, then a candidate
+   * Travelpayouts equivalent) — dropped in favor of importing
+   * Travelpayouts' full public airports/cities/countries reference data
+   * into this table once (see scripts/import-airports.ts), which covers
+   * every commercial airport without a per-keystroke external call. Run
+   * that script if a search comes up empty for a real airport.
    */
   async search(query: string): Promise<AirportResponse[]> {
     // Strip characters that are syntactically meaningful in a PostgREST
@@ -30,9 +26,7 @@ export class AirportsService {
       return [];
     }
 
-    const local = await this.searchLocal(term);
-    const rows =
-      local.length > 0 ? local : await this.searchAmadeusAndCache(term);
+    const rows = await this.searchLocal(term);
     return rows.map((row) => this.toResponse(row));
   }
 
@@ -58,51 +52,5 @@ export class AirportsService {
       throw result.error;
     }
     return result.data ?? [];
-  }
-
-  private async searchAmadeusAndCache(term: string): Promise<AirportRow[]> {
-    let locations: AmadeusLocation[];
-    try {
-      locations = await this.amadeus.searchLocations(term);
-    } catch (err) {
-      // Amadeus unreachable/misconfigured — degrade to "no results" rather
-      // than 500ing the whole search request.
-      this.logger.warn(
-        `Amadeus location search failed for "${term}": ${(err as Error).message}`,
-      );
-      return [];
-    }
-
-    const rows: AirportRow[] = locations
-      .filter((location) => location.iataCode)
-      .map((location) => ({
-        iata_code: location.iataCode,
-        name: location.name,
-        city: location.address?.cityName ?? location.name,
-        country: location.address?.countryName ?? '',
-      }));
-
-    if (rows.length === 0) {
-      return [];
-    }
-
-    const upserted = await this.supabase
-      .getClient()
-      .from('airports')
-      .upsert(
-        rows.map((row) => ({ ...row, source: 'amadeus' as const })),
-        { onConflict: 'iata_code' },
-      )
-      .select('iata_code, name, city, country');
-
-    if (upserted.error) {
-      // Caching is an optimization, not correctness-critical — still return
-      // what Amadeus gave us even if the upsert failed.
-      this.logger.warn(
-        `Failed to cache Amadeus airports: ${upserted.error.message}`,
-      );
-      return rows;
-    }
-    return upserted.data ?? rows;
   }
 }

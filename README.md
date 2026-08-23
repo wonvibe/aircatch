@@ -1,6 +1,6 @@
 # 에어캐치 (AirCatch)
 
-항공권 특가 알림 앱. 다중 목적지를 등록해두면 서버가 주기적으로 Amadeus API 가격을 조회하고, 등록 시점 기준가보다 저렴해지면 푸시 알림을 보낸다.
+항공권 특가 알림 앱. 다중 목적지를 등록해두면 서버가 주기적으로 Travelpayouts Data API로 가격을 조회하고, 등록 시점 기준가보다 저렴해지면 푸시 알림을 보낸다.
 
 전체 요구사항은 [`prd.md`](./prd.md), 구현 계획은 `.claude/plans/`를 참고.
 
@@ -52,20 +52,28 @@ pnpm exec supabase start   # 로컬 스택(Docker 필요)
 pnpm exec supabase db diff # 마이그레이션과 실제 스키마 차이 확인
 ```
 
-### Amadeus
+### Travelpayouts (가격 데이터)
 
-1. https://developers.amadeus.com 에서 가입 후 앱을 하나 만들면 무료 Self-Service(test) API 키(Client ID/Secret)가 발급된다.
-2. `.env`의 `AMADEUS_CLIENT_ID` / `AMADEUS_CLIENT_SECRET`에 채워 넣는다. `AMADEUS_ENV=test`가 기본값(운영 전환 시 `production`).
-3. 키가 없거나 Amadeus 호출이 실패해도 앱은 정상 동작한다 — `/watches` 생성은 성공하고 `baselinePrice`만 `null`로 남는다(`apps/api/src/watches/watches.service.ts`의 `captureBaseline` 참고). 공항 검색(`/airports/search`)도 시드 데이터에서 못 찾으면 빈 배열을 반환할 뿐 에러가 나지 않는다.
-4. 무료 티어 할당량 확인용으로 프로세스 시작 이후 누적 호출 수를 볼 수 있다(재시작하면 리셋되는 인메모리 카운터 — 정확한 월별 회계가 아니라 "슬슬 한도에 가까워지는지" 감으로 보는 용도):
+> **Amadeus for Developers의 무료 Self-Service API는 2026-07-17부로 완전히 종료**됐다(셀프서비스 가입 자체가 없어지고 Enterprise 영업 문의로만 연결됨). 대체 데이터 소스로 [Travelpayouts Data API](https://www.travelpayouts.com/programs/100/tools/api)(Aviasales 제휴 네트워크)를 사용한다 — 무료, 진짜 셀프서비스(이메일+비밀번호만으로 즉시 가입, 승인 절차 없음), 초당 10회 요청 허용.
+
+1. https://www.travelpayouts.com 에서 가입(이메일/비밀번호만 필요) 후 [Programs → Tools → API](https://www.travelpayouts.com/programs/100/tools/api)에서 토큰 발급.
+2. `.env`의 `TRAVELPAYOUTS_TOKEN`에 채워 넣는다.
+3. 키가 없거나 호출이 실패해도 앱은 정상 동작한다 — `/watches` 생성은 성공하고 `baselinePrice`만 `null`로 남는다(`apps/api/src/watches/watches.service.ts`의 `captureBaseline` 참고).
+4. 호출량 확인(재시작하면 리셋되는 인메모리 카운터 — Travelpayouts는 Amadeus와 달리 월별 할당량이 없고 초당 10회 제한만 있어서, "한도 임박 경고"가 아니라 단순 호출량 확인용):
    ```bash
-   curl http://localhost:3000/internal/amadeus/quota-status -H "x-internal-secret: $INTERNAL_CRON_SECRET"
+   curl http://localhost:3000/internal/travelpayouts/usage-status -H "x-internal-secret: $INTERNAL_CRON_SECRET"
    ```
-   500/1,000/1,500/1,900회 시점마다 서버 로그에 경고도 남긴다(`apps/api/src/amadeus/amadeus.service.ts`).
+5. **공항 검색은 더 이상 외부 API로 폴백하지 않는다** — 대신 Travelpayouts의 공개 공항/도시/국가 참조 데이터(토큰 불필요)를 통째로 가져와 `airports` 테이블에 upsert하는 스크립트가 있다. 전 세계 취항 공항을 한 번에 커버하므로(2만+ 행) 최초 1회, 또는 데이터 갱신이 필요할 때 실행:
+   ```bash
+   cd apps/api
+   pnpm import:airports
+   ```
+   (`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`가 루트 `.env`에 있어야 한다.) `seed.sql`의 20개 공항은 이 스크립트를 아직 안 돌린 로컬 개발 환경을 위한 최소 데이터로 남겨뒀다.
+6. **알려진 정확도 한계**: Travelpayouts 캘린더는 실제 Aviasales 검색 이력 기반 캐시 데이터라 최대 7일 정도 갱신 지연이 있고(실시간 GDS 조회 아님), 다구간/왕복 가격은 구간별 최저가를 합산한 근사치다(단일 결합 견적 API가 없음) — `apps/api/src/pricing/fare-finder.service.ts` 참고. 그래서 가격 추이 화면에 "실제 결제가와 다를 수 있음" 배너가 항상 붙어 있다.
 
 ### 가격 모니터링 크론 / 알림
 
-- `apps/api/src/cron/price-monitor.service.ts`가 두 개의 스케줄을 돌린다: 편도/왕복 watch는 5분마다 실행되며 각 watch를 id 해시 기준 12개 슬롯 중 하나에만 배정해 사실상 시간당 1회 조회(부하 분산), 다구간 watch는 4시간마다 전체를 훑는다(`flight-offers`가 더 비싼 호출이라 저빈도로 운영).
+- `apps/api/src/cron/price-monitor.service.ts`가 두 개의 스케줄을 돌린다: 편도/왕복 watch는 5분마다 실행되며 각 watch를 id 해시 기준 12개 슬롯 중 하나에만 배정해 사실상 시간당 1회 조회(부하 분산), 다구간 watch는 4시간마다 전체를 훑는다(구간마다 별도 호출이 필요해서 저빈도로 운영).
 - 기준가 하락 판정: 새 가격이 `baseline_price`보다 낮고, 하락폭이 5,000원 이상이거나 `target_price` 이하이면 알림 발송 + `baseline_price`/`last_notified_price` 갱신. 임계값 미만의 소폭 하락은 `price_history`에는 기록되지만 기준가는 움직이지 않는다(나중에 더 큰 폭으로 떨어졌을 때 원래 기준가 대비로 정확히 비교하기 위함).
 - 로컬에서 즉시 확인하려면 cron을 기다리지 않고 바로 트리거할 수 있다:
   ```bash
@@ -104,6 +112,6 @@ eas submit --platform ios                        # 스토어 제출
 - 클라이언트: React Native(Expo), Zustand
 - 백엔드: NestJS
 - DB/인증: Supabase (Postgres + Auth)
-- 가격 데이터: Amadeus Self-Service API
+- 가격 데이터: Travelpayouts Data API
 - 푸시 알림: Expo Notifications (FCM/APNs)
 - 스케줄러: `@nestjs/schedule` 기반 크론

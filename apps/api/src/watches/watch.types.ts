@@ -21,7 +21,7 @@ export interface WatchResponse {
   adults: number;
   targetPrice: number;
   currency: string;
-  // null when baseline capture fails (e.g. Amadeus unreachable/misconfigured,
+  // null when baseline capture fails (e.g. Travelpayouts unreachable/misconfigured,
   // or no fares found) — watch creation still succeeds either way.
   baselinePrice: number | null;
   baselineCapturedAt: string | null;

@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { AmadeusModule } from '../amadeus/amadeus.module';
+import { TravelpayoutsModule } from '../travelpayouts/travelpayouts.module';
 import { FareFinderService } from './fare-finder.service';
 
 @Module({
-  imports: [AmadeusModule],
+  imports: [TravelpayoutsModule],
   providers: [FareFinderService],
   exports: [FareFinderService],
 })
