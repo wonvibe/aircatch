@@ -19,6 +19,8 @@ export interface WatchRow {
   baseline_price: number | null;
   baseline_captured_at: string | null;
   baseline_offer_snapshot: unknown;
+  latest_price: number | null;
+  latest_checked_at: string | null;
   last_notified_price: number | null;
   last_notified_at: string | null;
   status: WatchStatus;

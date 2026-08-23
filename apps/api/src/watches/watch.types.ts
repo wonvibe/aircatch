@@ -25,6 +25,10 @@ export interface WatchResponse {
   // or no fares found) — watch creation still succeeds either way.
   baselinePrice: number | null;
   baselineCapturedAt: string | null;
+  // Most recent check, regardless of whether it moved the baseline — this is
+  // "현재가" for the dashboard's 기준가 vs 현재가 comparison (PRD 6절).
+  latestPrice: number | null;
+  latestCheckedAt: string | null;
   lastNotifiedPrice: number | null;
   lastNotifiedAt: string | null;
   status: WatchStatus;

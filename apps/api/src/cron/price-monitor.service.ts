@@ -143,16 +143,37 @@ export class PriceMonitorService {
       );
     }
 
+    const nowIso = new Date().toISOString();
+    // latest_price/latest_checked_at reflect this check regardless of
+    // outcome — this is "현재가" for the dashboard's baseline-vs-current
+    // comparison (PRD 6절), distinct from baseline_price, which only
+    // ratchets down and wouldn't reflect a price that has since risen.
+    const patch: Partial<
+      Pick<
+        WatchRow,
+        | 'latest_price'
+        | 'latest_checked_at'
+        | 'baseline_price'
+        | 'baseline_captured_at'
+        | 'baseline_offer_snapshot'
+        | 'last_notified_price'
+        | 'last_notified_at'
+      >
+    > = {
+      latest_price: found.price,
+      latest_checked_at: nowIso,
+    };
+
     // No baseline yet (the initial capture on watch creation never
     // succeeded) — establish one now, silently, same as creation does.
     if (watch.baseline_price === null) {
+      patch.baseline_price = found.price;
+      patch.baseline_captured_at = nowIso;
+      patch.baseline_offer_snapshot = found.rawOffer;
+
       const init = await client
         .from('watches')
-        .update({
-          baseline_price: found.price,
-          baseline_captured_at: new Date().toISOString(),
-          baseline_offer_snapshot: found.rawOffer,
-        })
+        .update(patch)
         .eq('id', watch.id);
       if (init.error) {
         this.logger.warn(
@@ -162,40 +183,41 @@ export class PriceMonitorService {
       return false;
     }
 
-    if (found.price >= watch.baseline_price) {
-      return false; // no drop — already recorded in price_history above
-    }
+    let shouldNotify = false;
+    if (found.price < watch.baseline_price) {
+      const dropAmount = watch.baseline_price - found.price;
+      const meetsThreshold =
+        dropAmount >= MIN_DROP_THRESHOLD_KRW ||
+        found.price <= watch.target_price;
+      const alreadyNotifiedAtThisOrLower =
+        watch.last_notified_price !== null &&
+        found.price >= watch.last_notified_price;
 
-    const dropAmount = watch.baseline_price - found.price;
-    const meetsThreshold =
-      dropAmount >= MIN_DROP_THRESHOLD_KRW || found.price <= watch.target_price;
-    const alreadyNotifiedAtThisOrLower =
-      watch.last_notified_price !== null &&
-      found.price >= watch.last_notified_price;
-
-    if (!meetsThreshold || alreadyNotifiedAtThisOrLower) {
-      // A real but sub-threshold (or already-notified) dip: leave the
+      if (meetsThreshold && !alreadyNotifiedAtThisOrLower) {
+        shouldNotify = true;
+        patch.baseline_price = found.price;
+        patch.baseline_captured_at = nowIso;
+        patch.baseline_offer_snapshot = found.rawOffer;
+        patch.last_notified_price = found.price;
+        patch.last_notified_at = nowIso;
+      }
+      // else: a real but sub-threshold (or already-notified) dip — leave the
       // baseline where it is so a later, larger drop from the *original*
       // baseline is still measured correctly and can still notify.
+    }
+
+    const watchUpdate = await client
+      .from('watches')
+      .update(patch)
+      .eq('id', watch.id);
+    if (watchUpdate.error) {
+      this.logger.warn(
+        `Failed to update watch ${watch.id}: ${watchUpdate.error.message}`,
+      );
       return false;
     }
 
-    const nowIso = new Date().toISOString();
-    const watchUpdate = await client
-      .from('watches')
-      .update({
-        baseline_price: found.price,
-        baseline_captured_at: nowIso,
-        baseline_offer_snapshot: found.rawOffer,
-        last_notified_price: found.price,
-        last_notified_at: nowIso,
-      })
-      .eq('id', watch.id);
-
-    if (watchUpdate.error) {
-      this.logger.warn(
-        `Failed to update baseline for watch ${watch.id}: ${watchUpdate.error.message}`,
-      );
+    if (!shouldNotify) {
       return false;
     }
 

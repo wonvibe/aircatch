@@ -1,0 +1,171 @@
+import { useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScreenContainer } from '../../components/ScreenContainer';
+import { TextField } from '../../components/TextField';
+import { Button } from '../../components/Button';
+import { TripTypeSelector } from './components/TripTypeSelector';
+import { AirportSearchInput } from './components/AirportSearchInput';
+import { DateField } from './components/DateField';
+import { MultiCitySegmentList, SegmentDraft } from './components/MultiCitySegmentList';
+import { useWatchesStore } from '../../store/useWatchesStore';
+import { Airport, TripType } from '../../api/types';
+import { colors, spacing, typography } from '../../theme/tokens';
+import { addMonths, toDateString } from '../../utils/date';
+import type { AppStackScreenProps } from '../../navigation/types';
+
+const TODAY = new Date();
+const MAX_DATE = addMonths(TODAY, 2); // PRD: 향후 2개월 탐색 범위
+
+export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) {
+  const createWatch = useWatchesStore((s) => s.create);
+
+  const [tripType, setTripType] = useState<TripType>('one_way');
+  const [origin, setOrigin] = useState<Airport | null>(null);
+  const [destination, setDestination] = useState<Airport | null>(null);
+  const [departDateFrom, setDepartDateFrom] = useState(TODAY);
+  const [departDateTo, setDepartDateTo] = useState(MAX_DATE);
+  const [segments, setSegments] = useState<SegmentDraft[]>([
+    { origin: null, destination: null, date: TODAY },
+    { origin: null, destination: null, date: TODAY },
+  ]);
+  const [targetPrice, setTargetPrice] = useState('');
+  const [adults, setAdults] = useState('1');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const validate = (): string | null => {
+    if (tripType !== 'multi_city') {
+      if (!origin || !destination) return '출발지와 도착지를 선택해주세요.';
+      if (origin.iataCode === destination.iataCode) return '출발지와 도착지가 같을 수 없어요.';
+    } else {
+      for (const [i, segment] of segments.entries()) {
+        if (!segment.origin || !segment.destination) return `구간 ${i + 1}의 출발/도착지를 선택해주세요.`;
+      }
+    }
+    if (departDateFrom > departDateTo) return '탐색 시작일이 종료일보다 늦을 수 없어요.';
+    const price = Number(targetPrice);
+    if (!targetPrice || Number.isNaN(price) || price <= 0) return '목표가를 올바르게 입력해주세요.';
+    const adultsCount = Number(adults);
+    if (!adults || Number.isNaN(adultsCount) || adultsCount < 1) return '인원 수를 올바르게 입력해주세요.';
+    return null;
+  };
+
+  const submit = async () => {
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await createWatch({
+        tripType,
+        originIata: tripType !== 'multi_city' ? origin!.iataCode : undefined,
+        destinationIata: tripType !== 'multi_city' ? destination!.iataCode : undefined,
+        departDateFrom: toDateString(departDateFrom),
+        departDateTo: toDateString(departDateTo),
+        adults: Number(adults),
+        targetPrice: Number(targetPrice),
+        segments:
+          tripType === 'multi_city'
+            ? segments.map((segment, index) => ({
+                sequenceNo: index,
+                originIata: segment.origin!.iataCode,
+                destinationIata: segment.destination!.iataCode,
+                dateFrom: toDateString(segment.date),
+                dateTo: toDateString(segment.date),
+              }))
+            : undefined,
+      });
+      navigation.goBack();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ScreenContainer>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
+          <Text style={[typography.title, styles.title]}>새 알림 등록</Text>
+
+          <TripTypeSelector value={tripType} onChange={setTripType} />
+
+          {tripType !== 'multi_city' ? (
+            <>
+              <AirportSearchInput label="출발지" value={origin} onChange={setOrigin} />
+              <AirportSearchInput label="도착지" value={destination} onChange={setDestination} />
+            </>
+          ) : (
+            <MultiCitySegmentList segments={segments} onChange={setSegments} minDate={TODAY} maxDate={MAX_DATE} />
+          )}
+
+          <Text style={styles.sectionLabel}>탐색 기간 (최대 2개월)</Text>
+          <View style={styles.dateRow}>
+            <DateField
+              label="시작일"
+              value={departDateFrom}
+              minimumDate={TODAY}
+              maximumDate={MAX_DATE}
+              onChange={setDepartDateFrom}
+              style={styles.dateFieldLeft}
+            />
+            <DateField
+              label="종료일"
+              value={departDateTo}
+              minimumDate={departDateFrom}
+              maximumDate={MAX_DATE}
+              onChange={setDepartDateTo}
+            />
+          </View>
+
+          <TextField
+            label="목표 예산 (원)"
+            placeholder="예: 400000"
+            keyboardType="number-pad"
+            value={targetPrice}
+            onChangeText={setTargetPrice}
+          />
+          <TextField
+            label="인원"
+            keyboardType="number-pad"
+            value={adults}
+            onChangeText={setAdults}
+          />
+
+          {error && <Text style={styles.errorText}>{error}</Text>}
+
+          <Button label="등록하기" onPress={submit} loading={submitting} style={styles.submitButton} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  scrollContent: { paddingBottom: spacing.xxl, paddingTop: spacing.md },
+  title: { marginBottom: spacing.lg },
+  sectionLabel: {
+    ...typography.bodySecondary,
+    marginBottom: spacing.sm,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  dateFieldLeft: {
+    marginRight: 0,
+  },
+  errorText: {
+    ...typography.bodySecondary,
+    color: colors.danger,
+    marginBottom: spacing.md,
+  },
+  submitButton: {
+    marginTop: spacing.sm,
+  },
+});

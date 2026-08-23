@@ -257,12 +257,15 @@ export class WatchesService {
       );
     }
 
+    const nowIso = new Date().toISOString();
     const watchUpdate = await client
       .from('watches')
       .update({
         baseline_price: found.price,
-        baseline_captured_at: new Date().toISOString(),
+        baseline_captured_at: nowIso,
         baseline_offer_snapshot: found.rawOffer,
+        latest_price: found.price,
+        latest_checked_at: nowIso,
       })
       .eq('id', watch.id)
       .select()
@@ -313,6 +316,8 @@ export class WatchesService {
       baselinePrice:
         row.baseline_price !== null ? Number(row.baseline_price) : null,
       baselineCapturedAt: row.baseline_captured_at,
+      latestPrice: row.latest_price !== null ? Number(row.latest_price) : null,
+      latestCheckedAt: row.latest_checked_at,
       lastNotifiedPrice:
         row.last_notified_price !== null
           ? Number(row.last_notified_price)

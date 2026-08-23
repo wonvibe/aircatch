@@ -3,6 +3,7 @@ import { AmadeusService } from '../amadeus/amadeus.service';
 import type { AmadeusLocation } from '../amadeus/amadeus.types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AirportRow } from './airport.entities';
+import { AirportResponse } from './airport.types';
 
 @Injectable()
 export class AirportsService {
@@ -19,7 +20,7 @@ export class AirportsService {
    * it finds (source='amadeus') so the next search for the same term is
    * local again.
    */
-  async search(query: string): Promise<AirportRow[]> {
+  async search(query: string): Promise<AirportResponse[]> {
     // Strip characters that are syntactically meaningful in a PostgREST
     // `.or()` filter string (`,`, `(`, `)`) so user input can't reshape the
     // query — the table only holds public airport data, but a malformed
@@ -30,11 +31,18 @@ export class AirportsService {
     }
 
     const local = await this.searchLocal(term);
-    if (local.length > 0) {
-      return local;
-    }
+    const rows =
+      local.length > 0 ? local : await this.searchAmadeusAndCache(term);
+    return rows.map((row) => this.toResponse(row));
+  }
 
-    return this.searchAmadeusAndCache(term);
+  private toResponse(row: AirportRow): AirportResponse {
+    return {
+      iataCode: row.iata_code,
+      name: row.name,
+      city: row.city,
+      country: row.country,
+    };
   }
 
   private async searchLocal(term: string): Promise<AirportRow[]> {

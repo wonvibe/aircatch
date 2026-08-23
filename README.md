@@ -34,9 +34,16 @@ pnpm dev:api            # http://localhost:3000 , GET /health 로 확인
 
 ### 모바일 앱 (Expo)
 
+Expo는 이 앱(`apps/mobile/`) 루트의 `.env`만 읽는다 — 저장소 루트 `.env`와는 별도다.
+
 ```bash
-pnpm dev:mobile          # Expo Go 또는 시뮬레이터로 QR/키 입력 접속
+cp apps/mobile/.env.example apps/mobile/.env   # 값 채워넣기 (Supabase URL/anon key, API base URL)
+pnpm dev:mobile                                 # Expo Go 또는 시뮬레이터로 QR/키 입력 접속
 ```
+
+- 인증 화면은 Supabase Auth로 직접 가입/로그인한다. Supabase 프로젝트의 Auth 설정에서 "Confirm email"이 켜져 있으면 가입 후 이메일 확인이 필요하다.
+- 푸시 알림 토큰 등록은 EAS `projectId`가 있어야 동작한다(`eas init` 이후 `app.json`의 `extra.eas.projectId`). 아직 EAS 프로젝트를 만들지 않았다면 콘솔에 경고만 찍히고 나머지 기능은 정상 동작한다(`src/hooks/usePushRegistration.ts`).
+- 가격 추이 화면의 "목표가 이하 추천 일정"은 별도 API 없이, 이미 불러온 `price_history`를 클라이언트에서 필터링해 만든다.
 
 ### Supabase
 
