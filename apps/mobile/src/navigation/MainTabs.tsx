@@ -2,6 +2,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
 import { DashboardScreen } from '../screens/Dashboard/DashboardScreen';
 import { NotificationHistoryScreen } from '../screens/NotificationHistory/NotificationHistoryScreen';
+import { SettingsScreen } from '../screens/Settings/SettingsScreen';
 import { MainTabParamList } from './types';
 import { colors } from '../theme/tokens';
 
@@ -26,6 +27,11 @@ export function MainTabs() {
         name="NotificationHistory"
         component={NotificationHistoryScreen}
         options={{ title: '알림', tabBarIcon: ({ color }) => <TabIcon symbol="🔔" color={color} /> }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: '설정', tabBarIcon: ({ color }) => <TabIcon symbol="⚙️" color={color} /> }}
       />
     </Tab.Navigator>
   );

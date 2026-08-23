@@ -5,7 +5,6 @@ import { AppNavigator } from './AppNavigator';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { LoadingState } from '../components/StateViews';
 import { useAuthStore } from '../store/useAuthStore';
-import { usePushRegistration } from '../hooks/usePushRegistration';
 
 export function RootNavigator() {
   const session = useAuthStore((s) => s.session);
@@ -16,8 +15,6 @@ export function RootNavigator() {
     const unsubscribe = init();
     return unsubscribe;
   }, [init]);
-
-  usePushRegistration();
 
   if (initializing) {
     return (

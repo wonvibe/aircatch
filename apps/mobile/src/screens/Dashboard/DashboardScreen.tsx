@@ -3,6 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { EmptyState, ErrorState, LoadingState } from '../../components/StateViews';
+import { PushPermissionBanner } from '../../components/PushPermissionBanner';
 import { WatchCard } from './components/WatchCard';
 import { useWatchesStore } from '../../store/useWatchesStore';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
@@ -28,6 +29,8 @@ export function DashboardScreen({ navigation }: MainTabScreenProps<'Dashboard'>)
       <View style={styles.header}>
         <Text style={typography.title}>내 여정</Text>
       </View>
+
+      <PushPermissionBanner />
 
       {loading && watches.length === 0 && <LoadingState />}
       {!loading && error && watches.length === 0 && <ErrorState message={error} onRetry={fetchAll} />}

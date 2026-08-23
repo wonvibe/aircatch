@@ -6,11 +6,13 @@ export type AppStackParamList = {
   MainTabs: undefined;
   NewWatch: undefined;
   PriceDetail: { watchId: string };
+  PrivacyPolicy: undefined;
 };
 
 export type MainTabParamList = {
   Dashboard: undefined;
   NotificationHistory: undefined;
+  Settings: undefined;
 };
 
 // Tab screens need both their own tab navigation AND the parent stack's

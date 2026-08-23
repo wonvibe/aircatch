@@ -15,6 +15,21 @@ const REQUEST_TIMEOUT_MS = 10_000;
 // against expiry mid-flight.
 const TOKEN_REFRESH_SLACK_MS = 5_000;
 
+type EndpointCategory = 'flight-dates' | 'flight-offers' | 'locations';
+
+// Amadeus's free Self-Service tier meters each API separately (order of
+// ~1-2k calls/month depending on the endpoint) — these are rough
+// checkpoints to get a log line before a batch run silently exhausts the
+// month's quota, not an exact reading of the real limit.
+const USAGE_WARN_THRESHOLDS = [500, 1000, 1500, 1900];
+
+export interface AmadeusUsageStats {
+  /** Process start time — counts reset on restart, they are not persisted. */
+  startedAt: string;
+  callsByEndpoint: Record<EndpointCategory, number>;
+  totalCalls: number;
+}
+
 /**
  * Thin client for the Amadeus Self-Service API (OAuth2 client-credentials,
  * cheapest-date search, flight-offers search, and airport/city locations).
@@ -29,12 +44,28 @@ export class AmadeusService {
   private readonly logger = new Logger(AmadeusService.name);
   private tokenCache: { token: string; expiresAt: number } | null = null;
 
+  private readonly startedAt = new Date().toISOString();
+  private readonly usage: Record<EndpointCategory, number> = {
+    'flight-dates': 0,
+    'flight-offers': 0,
+    locations: 0,
+  };
+
   constructor(private readonly config: ConfigService) {}
 
   private get baseUrl(): string {
     return this.config.get<string>('AMADEUS_ENV') === 'production'
       ? 'https://api.amadeus.com'
       : 'https://test.api.amadeus.com';
+  }
+
+  getUsageStats(): AmadeusUsageStats {
+    const totalCalls = Object.values(this.usage).reduce((sum, n) => sum + n, 0);
+    return {
+      startedAt: this.startedAt,
+      callsByEndpoint: { ...this.usage },
+      totalCalls,
+    };
   }
 
   async searchCheapestDates(
@@ -50,6 +81,8 @@ export class AmadeusService {
     });
     const response = await this.request<{ data: AmadeusFlightDateOffer[] }>(
       `/v1/shopping/flight-dates?${params.toString()}`,
+      undefined,
+      'flight-dates',
     );
     return response.data ?? [];
   }
@@ -62,6 +95,8 @@ export class AmadeusService {
     });
     const response = await this.request<{ data: AmadeusLocation[] }>(
       `/v1/reference-data/locations?${params.toString()}`,
+      undefined,
+      'locations',
     );
     return response.data ?? [];
   }
@@ -86,6 +121,7 @@ export class AmadeusService {
           searchCriteria: { maxFlightOffers: 5 },
         }),
       },
+      'flight-offers',
     );
     return response.data ?? [];
   }
@@ -134,7 +170,11 @@ export class AmadeusService {
     return data.access_token;
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: RequestInit | undefined,
+    category: EndpointCategory,
+  ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -145,6 +185,7 @@ export class AmadeusService {
       });
 
       if (response.ok) {
+        this.recordUsage(category);
         return (await response.json()) as T;
       }
 
@@ -164,6 +205,16 @@ export class AmadeusService {
 
     // Unreachable — the loop above always returns or throws — but keeps TS happy.
     throw new Error('Amadeus request failed after retries');
+  }
+
+  private recordUsage(category: EndpointCategory): void {
+    this.usage[category] += 1;
+    const total = Object.values(this.usage).reduce((sum, n) => sum + n, 0);
+    if (USAGE_WARN_THRESHOLDS.includes(total)) {
+      this.logger.warn(
+        `Amadeus API usage has reached ${total} calls since ${this.startedAt} (${JSON.stringify(this.usage)}) — check free-tier quota.`,
+      );
+    }
   }
 
   private async fetchWithTimeout(
