@@ -42,7 +42,11 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
         if (!segment.origin || !segment.destination) return `구간 ${i + 1}의 출발/도착지를 선택해주세요.`;
       }
     }
-    if (departDateFrom > departDateTo) return '탐색 시작일이 종료일보다 늦을 수 없어요.';
+    // Multi-city has no separate "탐색 기간" UI — its search window is
+    // derived from the segment dates at submit time instead.
+    if (tripType !== 'multi_city' && departDateFrom > departDateTo) {
+      return '탐색 시작일이 종료일보다 늦을 수 없어요.';
+    }
     const price = Number(targetPrice);
     if (!targetPrice || Number.isNaN(price) || price <= 0) return '목표가를 올바르게 입력해주세요.';
     const adultsCount = Number(adults);
@@ -59,24 +63,33 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
     setError(null);
     setSubmitting(true);
     try {
+      // The backend still requires depart_date_from/to on every watch (used
+      // for one_way/round_trip pricing), but multi-city pricing only ever
+      // reads the segments' own dates — so for multi-city, derive a window
+      // that just spans the segments instead of asking the user to set a
+      // second, unused date range.
+      const segmentDates = segments.map((s) => s.date.getTime());
+      const isMultiCity = tripType === 'multi_city';
+      const rangeFrom = isMultiCity ? new Date(Math.min(...segmentDates)) : departDateFrom;
+      const rangeTo = isMultiCity ? new Date(Math.max(...segmentDates)) : departDateTo;
+
       await createWatch({
         tripType,
-        originIata: tripType !== 'multi_city' ? origin!.iataCode : undefined,
-        destinationIata: tripType !== 'multi_city' ? destination!.iataCode : undefined,
-        departDateFrom: toDateString(departDateFrom),
-        departDateTo: toDateString(departDateTo),
+        originIata: !isMultiCity ? origin!.iataCode : undefined,
+        destinationIata: !isMultiCity ? destination!.iataCode : undefined,
+        departDateFrom: toDateString(rangeFrom),
+        departDateTo: toDateString(rangeTo),
         adults: Number(adults),
         targetPrice: Number(targetPrice),
-        segments:
-          tripType === 'multi_city'
-            ? segments.map((segment, index) => ({
-                sequenceNo: index,
-                originIata: segment.origin!.iataCode,
-                destinationIata: segment.destination!.iataCode,
-                dateFrom: toDateString(segment.date),
-                dateTo: toDateString(segment.date),
-              }))
-            : undefined,
+        segments: isMultiCity
+          ? segments.map((segment, index) => ({
+              sequenceNo: index,
+              originIata: segment.origin!.iataCode,
+              destinationIata: segment.destination!.iataCode,
+              dateFrom: toDateString(segment.date),
+              dateTo: toDateString(segment.date),
+            }))
+          : undefined,
       });
       navigation.goBack();
     } catch (err) {
@@ -103,24 +116,28 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
             <MultiCitySegmentList segments={segments} onChange={setSegments} minDate={TODAY} maxDate={MAX_DATE} />
           )}
 
-          <Text style={styles.sectionLabel}>탐색 기간 (최대 2개월)</Text>
-          <View style={styles.dateRow}>
-            <DateField
-              label="시작일"
-              value={departDateFrom}
-              minimumDate={TODAY}
-              maximumDate={MAX_DATE}
-              onChange={setDepartDateFrom}
-              style={styles.dateFieldLeft}
-            />
-            <DateField
-              label="종료일"
-              value={departDateTo}
-              minimumDate={departDateFrom}
-              maximumDate={MAX_DATE}
-              onChange={setDepartDateTo}
-            />
-          </View>
+          {tripType !== 'multi_city' && (
+            <>
+              <Text style={styles.sectionLabel}>탐색 기간 (최대 2개월)</Text>
+              <View style={styles.dateRow}>
+                <DateField
+                  label="시작일"
+                  value={departDateFrom}
+                  minimumDate={TODAY}
+                  maximumDate={MAX_DATE}
+                  onChange={setDepartDateFrom}
+                  style={styles.dateFieldLeft}
+                />
+                <DateField
+                  label="종료일"
+                  value={departDateTo}
+                  minimumDate={departDateFrom}
+                  maximumDate={MAX_DATE}
+                  onChange={setDepartDateTo}
+                />
+              </View>
+            </>
+          )}
 
           <TextField
             label="목표 예산 (원)"
