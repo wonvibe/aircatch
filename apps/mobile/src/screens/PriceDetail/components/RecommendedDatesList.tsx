@@ -2,7 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Card } from '../../../components/Card';
 import { PriceHistoryEntry } from '../../../api/types';
 import { colors, spacing, typography } from '../../../theme/tokens';
-import { formatPrice } from '../../../utils/format';
+import { formatDate, formatPrice } from '../../../utils/format';
 
 interface Props {
   history: PriceHistoryEntry[];
@@ -10,22 +10,45 @@ interface Props {
   currency: string;
 }
 
-/** Derived client-side from price_history (already fetched for the chart)
+interface DateRange {
+  startDate: string;
+  endDate: string;
+  minPrice: number;
+}
+
+const MAX_RANGES = 5;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Derived client-side from price_history (already fetched for the chart)
  * rather than a dedicated backend endpoint — target-price-or-below dates,
- * deduped to the cheapest fare seen per date. */
+ * deduped to the cheapest fare seen per date, then grouped into
+ * consecutive-day ranges (e.g. "9/7 ~ 9/10") so a run of good days reads as
+ * one recommendation instead of a wall of near-identical single-day rows.
+ */
 export function RecommendedDatesList({ history, targetPrice, currency }: Props) {
-  const cheapestByDate = new Map<string, PriceHistoryEntry>();
+  const cheapestByDate = new Map<string, number>();
   for (const entry of history) {
     if (entry.price > targetPrice) continue;
     const existing = cheapestByDate.get(entry.departDate);
-    if (!existing || entry.price < existing.price) {
-      cheapestByDate.set(entry.departDate, entry);
+    if (existing === undefined || entry.price < existing) {
+      cheapestByDate.set(entry.departDate, entry.price);
     }
   }
 
-  const recommended = Array.from(cheapestByDate.values())
-    .sort((a, b) => a.price - b.price)
-    .slice(0, 5);
+  const ranges: DateRange[] = [];
+  for (const date of Array.from(cheapestByDate.keys()).sort()) {
+    const price = cheapestByDate.get(date) as number;
+    const last = ranges[ranges.length - 1];
+    if (last && isNextDay(last.endDate, date)) {
+      last.endDate = date;
+      last.minPrice = Math.min(last.minPrice, price);
+    } else {
+      ranges.push({ startDate: date, endDate: date, minPrice: price });
+    }
+  }
+
+  const recommended = ranges.sort((a, b) => a.minPrice - b.minPrice).slice(0, MAX_RANGES);
 
   if (recommended.length === 0) {
     return (
@@ -37,19 +60,25 @@ export function RecommendedDatesList({ history, targetPrice, currency }: Props) 
 
   return (
     <View>
-      {recommended.map((entry) => (
-        <Card key={entry.id} style={styles.row}>
-          <Text style={typography.body}>{formatDeparture(entry.departDate)}</Text>
-          <Text style={styles.price}>{formatPrice(entry.price, currency)}</Text>
+      {recommended.map((range) => (
+        <Card key={range.startDate} style={styles.row}>
+          <Text style={typography.body}>{formatRange(range)}</Text>
+          <Text style={styles.price}>{formatPrice(range.minPrice, currency)}</Text>
         </Card>
       ))}
     </View>
   );
 }
 
-function formatDeparture(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-');
-  return `${y}.${m}.${d}`;
+function isNextDay(dateStr: string, candidateStr: string): boolean {
+  const date = new Date(`${dateStr}T00:00:00Z`).getTime();
+  const candidate = new Date(`${candidateStr}T00:00:00Z`).getTime();
+  return candidate - date === ONE_DAY_MS;
+}
+
+function formatRange({ startDate, endDate }: DateRange): string {
+  if (startDate === endDate) return formatDate(startDate);
+  return `${formatDate(startDate)} ~ ${formatDate(endDate)}`;
 }
 
 const styles = StyleSheet.create({
