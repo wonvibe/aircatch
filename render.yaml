@@ -11,13 +11,20 @@ services:
     runtime: node
     plan: free
     region: singapore
-    # Not using `corepack enable`/`corepack prepare` — Render's Node 20.18.0
-    # image ships a corepack build that throws
-    # ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING when it tries to load pnpm's
-    # CJS bundle (a known corepack bug, not specific to this app). Installing
-    # pnpm directly via npm sidesteps corepack entirely.
-    buildCommand: npm install -g pnpm@11.22.0 && pnpm install --frozen-lockfile && pnpm --filter @aircatch/api build
-    startCommand: pnpm --filter @aircatch/api start:prod
+    # Two things NOT to use here, both tried and failed:
+    #  - `corepack enable`/`corepack prepare`: Render's Node 20.18.0 image's
+    #    corepack throws ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING loading
+    #    pnpm's CJS bundle (a corepack bug, not specific to this app).
+    #  - `npm install -g pnpm`: on the Node 24 image, pnpm ships
+    #    pre-installed under a read-only /usr/lib, and npm's global install
+    #    tries to rename that directory aside — EROFS.
+    # `npx -y pnpm@<version>` sidesteps both: it runs a local (per-project
+    # cache) copy of the exact pinned version, never touching corepack or
+    # any global/read-only install path. `-y` is required — without it npx
+    # blocks on an interactive "ok to install?" prompt that never resolves
+    # in a non-interactive build shell.
+    buildCommand: npx -y pnpm@11.22.0 install --frozen-lockfile && npx -y pnpm@11.22.0 --filter @aircatch/api build
+    startCommand: npx -y pnpm@11.22.0 --filter @aircatch/api start:prod
     healthCheckPath: /health
     envVars:
       # 20.18.0 (Render's default) hit ERR_UNKNOWN_BUILTIN_MODULE: undici
