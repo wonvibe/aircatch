@@ -20,8 +20,12 @@ services:
     startCommand: pnpm --filter @aircatch/api start:prod
     healthCheckPath: /health
     envVars:
+      # 20.18.0 (Render's default) hit ERR_UNKNOWN_BUILTIN_MODULE: undici
+      # (a transitive HTTP-client dependency) requires node:sqlite, a
+      # built-in only present from Node 22.5+. Pinned to the exact version
+      # already verified locally throughout this project's build.
       - key: NODE_VERSION
-        value: 20.18.0
+        value: 24.14.1
       - key: PORT
         value: 3000
       - key: SUPABASE_URL
