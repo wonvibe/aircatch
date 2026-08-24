@@ -61,6 +61,30 @@ export interface CreateWatchInput {
 export interface UpdateWatchInput {
   targetPrice?: number;
   status?: WatchStatus;
+  // one_way/round_trip only — rejected by the backend on a multi_city watch.
+  originIata?: string;
+  destinationIata?: string;
+  departDateFrom?: string;
+  departDateTo?: string;
+  returnDateFrom?: string;
+  returnDateTo?: string;
+  adults?: number;
+  // multi_city only — replaces the watch's entire segment list.
+  segments?: {
+    sequenceNo: number;
+    originIata: string;
+    destinationIata: string;
+    dateFrom: string;
+    dateTo: string;
+  }[];
+}
+
+export interface PriceHistoryLeg {
+  sequenceNo: number;
+  originIata: string;
+  destinationIata: string;
+  departDate: string;
+  price: number;
 }
 
 export interface PriceHistoryEntry {
@@ -72,6 +96,15 @@ export interface PriceHistoryEntry {
   currency: string;
   carrierCode: string | null;
   source: string;
+  // multi_city only — the actual per-leg dates this entry's price sums to,
+  // which can differ from the watch's own segment dates (see
+  // FareFinderService.findMultiCityFare's ±3-day tolerance on the API).
+  legs?: PriceHistoryLeg[];
+}
+
+export interface CalendarDateEntry {
+  date: string;
+  price: number;
 }
 
 export interface Airport {

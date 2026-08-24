@@ -146,6 +146,13 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
             value={targetPrice}
             onChangeText={setTargetPrice}
           />
+          {(tripType === 'round_trip' || tripType === 'multi_city') && (
+            <Text style={styles.targetPriceHint}>
+              {tripType === 'round_trip'
+                ? '왕복 가격은 가는 편·오는 편 편도가를 합산한 값이라 실제 왕복 예매가보다 높게 나올 수 있어요. 목표가를 여유 있게 설정하는 걸 추천해요.'
+                : '다구간 가격은 구간별 편도가의 합산이라 실제 예매가보다 높게 나올 수 있어요. 목표가를 여유 있게 설정하는 걸 추천해요.'}
+            </Text>
+          )}
           <TextField
             label="인원"
             keyboardType="number-pad"
@@ -176,6 +183,12 @@ const styles = StyleSheet.create({
   },
   dateFieldLeft: {
     marginRight: 0,
+  },
+  targetPriceHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
   },
   errorText: {
     ...typography.bodySecondary,

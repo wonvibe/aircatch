@@ -1,11 +1,11 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Card } from '../../../components/Card';
-import { PriceHistoryEntry } from '../../../api/types';
+import { CalendarDateEntry } from '../../../api/types';
 import { colors, spacing, typography } from '../../../theme/tokens';
 import { formatDate, formatPrice } from '../../../utils/format';
 
 interface Props {
-  history: PriceHistoryEntry[];
+  calendar: CalendarDateEntry[];
   targetPrice: number;
   currency: string;
 }
@@ -20,19 +20,19 @@ const MAX_RANGES = 5;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Derived client-side from price_history (already fetched for the chart)
- * rather than a dedicated backend endpoint — target-price-or-below dates,
- * deduped to the cheapest fare seen per date, then grouped into
- * consecutive-day ranges (e.g. "9/7 ~ 9/10") so a run of good days reads as
- * one recommendation instead of a wall of near-identical single-day rows.
+ * Fed by GET /watches/:id/calendar — a full per-date price snapshot fetched
+ * separately from price_history (which is one point per check, for the
+ * trend chart, not a calendar of dates). Target-price-or-below dates are
+ * grouped into consecutive-day ranges (e.g. "9/7 ~ 9/10") so a run of good
+ * days reads as one recommendation instead of a wall of single-day rows.
  */
-export function RecommendedDatesList({ history, targetPrice, currency }: Props) {
+export function RecommendedDatesList({ calendar, targetPrice, currency }: Props) {
   const cheapestByDate = new Map<string, number>();
-  for (const entry of history) {
+  for (const entry of calendar) {
     if (entry.price > targetPrice) continue;
-    const existing = cheapestByDate.get(entry.departDate);
+    const existing = cheapestByDate.get(entry.date);
     if (existing === undefined || entry.price < existing) {
-      cheapestByDate.set(entry.departDate, entry.price);
+      cheapestByDate.set(entry.date, entry.price);
     }
   }
 

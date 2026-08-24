@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MainTabs } from './MainTabs';
 import { NewWatchScreen } from '../screens/NewWatch/NewWatchScreen';
 import { PriceDetailScreen } from '../screens/PriceDetail/PriceDetailScreen';
+import { EditWatchScreen } from '../screens/EditWatch/EditWatchScreen';
 import { PrivacyPolicyScreen } from '../screens/PrivacyPolicy/PrivacyPolicyScreen';
 import { AppStackParamList } from './types';
 import { colors } from '../theme/tokens';
@@ -24,6 +25,11 @@ export function AppNavigator() {
         options={{ presentation: 'modal', title: '새 알림 등록' }}
       />
       <Stack.Screen name="PriceDetail" component={PriceDetailScreen} options={{ title: '가격 추이' }} />
+      <Stack.Screen
+        name="EditWatch"
+        component={EditWatchScreen}
+        options={{ presentation: 'modal', title: '여정 수정' }}
+      />
       <Stack.Screen
         name="PrivacyPolicy"
         component={PrivacyPolicyScreen}

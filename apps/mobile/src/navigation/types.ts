@@ -1,11 +1,16 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
+import type { Watch } from '../api/types';
 
 export type AppStackParamList = {
   MainTabs: undefined;
   NewWatch: undefined;
   PriceDetail: { watchId: string };
+  // Carries the already-loaded Watch (PriceDetailScreen already has it)
+  // instead of just an id, so this screen doesn't need its own fetch before
+  // it can hydrate the form.
+  EditWatch: { watch: Watch };
   PrivacyPolicy: undefined;
 };
 
