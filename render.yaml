@@ -1,0 +1,29 @@
+# Render Blueprint for the NestJS API (apps/api). Import this file when
+# creating the service on Render (New > Blueprint) so build/start commands
+# and the health check are pre-filled instead of typed by hand.
+#
+# Secrets (marked `sync: false` below) are NOT stored here — Render prompts
+# for them once at setup and keeps them in its own dashboard, matching the
+# values already in the repo's .env (never commit that file).
+services:
+  - type: web
+    name: aircatch-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: corepack enable && corepack prepare --activate && pnpm install --frozen-lockfile && pnpm --filter @aircatch/api build
+    startCommand: pnpm --filter @aircatch/api start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: PORT
+        value: 3000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: TRAVELPAYOUTS_TOKEN
+        sync: false
+      - key: INTERNAL_CRON_SECRET
+        sync: false
