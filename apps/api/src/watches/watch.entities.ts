@@ -52,4 +52,5 @@ export interface PriceHistoryRow {
   currency: string;
   carrier_code: string | null;
   source: string;
+  raw_offer: unknown;
 }

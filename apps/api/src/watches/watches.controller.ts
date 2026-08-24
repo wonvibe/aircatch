@@ -47,6 +47,11 @@ export class WatchesController {
     return this.watchesService.getPriceHistory(user.id, id, query.days ?? 60);
   }
 
+  @Get(':id/calendar')
+  getCalendar(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.watchesService.getCalendarSnapshot(user.id, id);
+  }
+
   @Patch(':id')
   update(
     @CurrentUser() user: AuthenticatedUser,

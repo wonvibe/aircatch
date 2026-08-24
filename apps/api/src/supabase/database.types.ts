@@ -270,6 +270,24 @@ export interface Database {
         };
         Relationships: [];
       };
+      price_calendar_snapshot: {
+        Row: {
+          watch_id: string;
+          captured_at: string;
+          entries: unknown;
+        };
+        Insert: {
+          watch_id: string;
+          captured_at?: string;
+          entries: unknown;
+        };
+        Update: {
+          watch_id?: string;
+          captured_at?: string;
+          entries?: unknown;
+        };
+        Relationships: [];
+      };
       notification_logs: {
         Row: {
           id: string;

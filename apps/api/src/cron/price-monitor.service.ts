@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { FareFinderService } from '../pricing/fare-finder.service';
+import type {
+  CalendarDateEntry,
+  FoundFare,
+} from '../pricing/fare-finder.types';
 import {
   DropNotification,
   NotificationsService,
@@ -97,26 +101,32 @@ export class PriceMonitorService {
     watch: WatchRow,
     segments: WatchSegmentRow[],
   ): Promise<boolean> {
-    const found =
-      watch.trip_type === 'multi_city'
-        ? await this.fareFinder.findMultiCityFare({
-            legs: segments.map((s) => ({
-              sequenceNo: s.sequence_no,
-              originIata: s.origin_iata,
-              destinationIata: s.destination_iata,
-              dateFrom: s.date_from,
-            })),
-            currency: watch.currency,
-          })
-        : await this.fareFinder.findSimpleFare({
-            origin: watch.origin_iata as string,
-            destination: watch.destination_iata as string,
-            dateFrom: watch.depart_date_from,
-            dateTo: watch.depart_date_to,
-            returnDateFrom: watch.return_date_from ?? undefined,
-            returnDateTo: watch.return_date_to ?? undefined,
-            currency: watch.currency,
-          });
+    let found: FoundFare | null;
+    if (watch.trip_type === 'multi_city') {
+      found = await this.fareFinder.findMultiCityFare({
+        legs: segments.map((s) => ({
+          sequenceNo: s.sequence_no,
+          originIata: s.origin_iata,
+          destinationIata: s.destination_iata,
+          dateFrom: s.date_from,
+        })),
+        currency: watch.currency,
+      });
+    } else {
+      const result = await this.fareFinder.findSimpleFare({
+        origin: watch.origin_iata as string,
+        destination: watch.destination_iata as string,
+        dateFrom: watch.depart_date_from,
+        dateTo: watch.depart_date_to,
+        returnDateFrom: watch.return_date_from ?? undefined,
+        returnDateTo: watch.return_date_to ?? undefined,
+        currency: watch.currency,
+      });
+      found = result.best;
+      if (result.dailyEntries.length > 0) {
+        await this.saveCalendarSnapshot(watch.id, result.dailyEntries);
+      }
+    }
 
     if (!found) return false;
 
@@ -236,6 +246,28 @@ export class PriceMonitorService {
     await this.notifications.notifyDrop(notification);
 
     return true;
+  }
+
+  /** Same snapshot table WatchesService writes on watch creation — see the
+   * price_calendar_snapshot migration for why this is separate from
+   * price_history. Best-effort: never fails the check. */
+  private async saveCalendarSnapshot(
+    watchId: string,
+    entries: CalendarDateEntry[],
+  ): Promise<void> {
+    const result = await this.supabase
+      .getClient()
+      .from('price_calendar_snapshot')
+      .upsert({
+        watch_id: watchId,
+        captured_at: new Date().toISOString(),
+        entries,
+      });
+    if (result.error) {
+      this.logger.warn(
+        `Failed to save calendar snapshot for watch ${watchId}: ${result.error.message}`,
+      );
+    }
   }
 
   private hashToSlot(id: string): number {

@@ -1,19 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  TravelpayoutsCalendarResponse,
-  TravelpayoutsCalendarOffer,
+  TravelpayoutsLatestPricesResponse,
+  TravelpayoutsLatestPriceEntry,
 } from './travelpayouts.types';
 
 const BASE_URL = 'https://api.travelpayouts.com';
 const MAX_RETRIES = 2;
 const BACKOFF_BASE_MS = 500;
 const REQUEST_TIMEOUT_MS = 10_000;
+// Max allowed by the endpoint. One call this size, cached, comfortably
+// covers a route/one_way combo for every watch checking it for the cache's
+// TTL — see price-cache.service.ts.
+const LATEST_PRICES_LIMIT = 1000;
 
 export interface TravelpayoutsUsageStats {
   /** Process start time — counts reset on restart, they are not persisted. */
   startedAt: string;
-  calendarCalls: number;
+  latestPriceCalls: number;
 }
 
 /**
@@ -22,17 +26,26 @@ export interface TravelpayoutsUsageStats {
  * 2026-07-17, no self-service signup remains). Token auth only, no OAuth —
  * much simpler than the Amadeus client it replaces.
  *
- * Note on data freshness: this is cached data from real Aviasales searches,
- * refreshed roughly every 7 days per Travelpayouts' own docs — not a live
- * GDS quote. Fine for a "has the price dropped lately" tracker; not a
- * substitute for a real-time fare check at booking time (hence the
- * in-app price-disclaimer banner).
+ * Uses GET /v2/prices/latest, not the /v1/prices/calendar this originally
+ * shipped with — that endpoint's docs claim omitting return_date returns
+ * one-way fares, but live testing showed it always returns round-trip
+ * prices (every entry carried a return_at with a realistic trip-length
+ * gap, one_way params were silently ignored). /v2/prices/latest has a
+ * `one_way` parameter that actually works (verified: one_way=true returns
+ * entries with an empty return_date at roughly a third of the
+ * one_way=false price for the same route/dates).
+ *
+ * Note on data freshness: like the old calendar endpoint, this is cached
+ * data from real Aviasales searches (`found_at` in each entry), not a live
+ * GDS quote — fine for a "has the price dropped lately" tracker, not a
+ * substitute for a real-time fare check at booking time (hence the in-app
+ * price-disclaimer banner).
  */
 @Injectable()
 export class TravelpayoutsService {
   private readonly logger = new Logger(TravelpayoutsService.name);
   private readonly startedAt = new Date().toISOString();
-  private calendarCalls = 0;
+  private latestPriceCalls = 0;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -40,7 +53,10 @@ export class TravelpayoutsService {
    * no monthly quota (unlike Amadeus's free tier), only a 10 req/s rate
    * limit, so this is ops visibility rather than a "running out" warning. */
   getUsageStats(): TravelpayoutsUsageStats {
-    return { startedAt: this.startedAt, calendarCalls: this.calendarCalls };
+    return {
+      startedAt: this.startedAt,
+      latestPriceCalls: this.latestPriceCalls,
+    };
   }
 
   private get token(): string {
@@ -51,29 +67,35 @@ export class TravelpayoutsService {
     return token;
   }
 
-  /** One calendar month of cheapest fares for a route, keyed by departure date. */
-  async getMonthCalendar(
+  /** Cached fares for a route, one-way or round-trip depending on `oneWay`.
+   * `period_type=year` pulls the whole cached year in one call regardless
+   * of which specific dates a caller ultimately wants — cheaper than
+   * per-month calls and matches how PriceCacheService caches this (one
+   * entry per origin/destination/oneWay/currency, not per month). */
+  async getLatestPrices(
     origin: string,
     destination: string,
-    month: string, // YYYY-MM
     currency: string,
-  ): Promise<Record<string, TravelpayoutsCalendarOffer>> {
+    oneWay: boolean,
+  ): Promise<TravelpayoutsLatestPriceEntry[]> {
     const params = new URLSearchParams({
       origin,
       destination,
-      depart_date: month,
-      calendar_type: 'departure_date',
       currency,
+      one_way: String(oneWay),
+      period_type: 'year',
+      beginning_of_period: new Date().toISOString().slice(0, 10),
+      sorting: 'price',
+      limit: String(LATEST_PRICES_LIMIT),
+      show_to_affiliates: 'true',
     });
 
-    const response = await this.request<TravelpayoutsCalendarResponse>(
-      `/v1/prices/calendar?${params.toString()}`,
+    const response = await this.request<TravelpayoutsLatestPricesResponse>(
+      `/v2/prices/latest?${params.toString()}`,
     );
-    this.calendarCalls += 1;
+    this.latestPriceCalls += 1;
 
-    if (!response.success || Array.isArray(response.data)) {
-      return {};
-    }
+    if (!response.success) return [];
     return response.data;
   }
 

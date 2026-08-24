@@ -7,9 +7,21 @@
 -- (`on conflict do update`, not `do nothing`) so these ~20 well-known
 -- entries keep real Korean names while everything else falls back to the
 -- bulk data. Safe to run standalone too, for local dev without the import.
+--
+-- FLR/FLO is a real bug this caught: the bulk import had Florence, Italy
+-- (FLR) labeled with the romanized "플로렌스" while Florence Regional
+-- Airport, South Carolina (FLO) — a tiny US regional airport nobody
+-- searching Korean actually wants — had somehow ended up with "피렌체",
+-- the name Koreans actually search for the Italian city. A user typing
+-- "피렌체" silently got routed to South Carolina instead of Italy (and a
+-- LIS→FLO watch predictably had zero fare data). Both rows below correct
+-- this — not just an addition, so FLO must stay listed even though it's
+-- not otherwise a "well-known" airport.
 insert into public.airports (iata_code, name, city, country, latitude, longitude, source)
 values
   ('ICN', '인천국제공항', '서울', '대한민국', 37.4602, 126.4407, 'seed'),
+  ('FLR', '피렌체 페레톨라 공항', '피렌체', '이탈리아', 43.8100, 11.2051, 'seed'),
+  ('FLO', '플로렌스 리저널 공항', '플로렌스(미국)', '미국', 34.1854, -79.7239, 'seed'),
   ('GMP', '김포국제공항', '서울', '대한민국', 37.5583, 126.7906, 'seed'),
   ('PUS', '김해국제공항', '부산', '대한민국', 35.1795, 128.9382, 'seed'),
   ('CJU', '제주국제공항', '제주', '대한민국', 33.5113, 126.4930, 'seed'),

@@ -1,24 +1,23 @@
 // Shapes for the Travelpayouts Data API (https://travelpayouts.github.io/slate/)
 // — only the fields this app reads.
 
-/** One day's cheapest fare from GET /v1/prices/calendar. */
-export interface TravelpayoutsCalendarOffer {
+/** One cached fare from GET /v2/prices/latest. `return_date` is `''` for a
+ * genuinely one-way entry (requested with one_way=true); populated for a
+ * round-trip entry (one_way=false). See price-cache.service.ts for why this
+ * replaced /v1/prices/calendar. */
+export interface TravelpayoutsLatestPriceEntry {
   origin: string;
   destination: string;
-  price: number;
-  transfers: number;
-  airline: string;
-  flight_number: number;
-  departure_at: string;
-  return_at?: string;
-  expires_at: string;
+  depart_date: string;
+  return_date: string;
+  value: number;
+  number_of_changes: number;
+  found_at: string;
+  actual: boolean;
 }
 
-export interface TravelpayoutsCalendarResponse {
+export interface TravelpayoutsLatestPricesResponse {
   success: boolean;
-  // Keyed by ISO date (YYYY-MM-DD). The upstream API serializes an empty
-  // result as `[]` instead of `{}` (empty-object-vs-array PHP quirk), so
-  // callers must handle both.
-  data: Record<string, TravelpayoutsCalendarOffer> | [];
-  error: string | null;
+  data: TravelpayoutsLatestPriceEntry[];
+  error: string;
 }

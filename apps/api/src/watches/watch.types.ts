@@ -37,6 +37,14 @@ export interface WatchResponse {
   segments?: WatchSegmentResponse[];
 }
 
+export interface PriceHistoryLeg {
+  sequenceNo: number;
+  originIata: string;
+  destinationIata: string;
+  departDate: string;
+  price: number;
+}
+
 export interface PriceHistoryEntry {
   id: string;
   checkedAt: string;
@@ -46,4 +54,10 @@ export interface PriceHistoryEntry {
   currency: string;
   carrierCode: string | null;
   source: string;
+  // multi_city only — the actual per-leg dates/prices this entry's price
+  // sums to. Segment dates on the watch itself are what the user asked
+  // for; these are what was actually found (can differ by a few days, see
+  // FareFinderService.findMultiCityFare), so the booking-link builder uses
+  // these instead of the watch's segments.
+  legs?: PriceHistoryLeg[];
 }

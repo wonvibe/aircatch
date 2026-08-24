@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AirportRow } from './airport.entities';
 import { AirportResponse } from './airport.types';
@@ -28,6 +28,22 @@ export class AirportsService {
 
     const rows = await this.searchLocal(term);
     return rows.map((row) => this.toResponse(row));
+  }
+
+  // Used by the mobile edit-watch screen to hydrate an AirportSearchInput's
+  // initial value from a watch's stored IATA code — watches only persist
+  // the code, not the city/name display text search needs.
+  async getByCode(iataCode: string): Promise<AirportResponse> {
+    const result = await this.supabase
+      .getClient()
+      .from('airports')
+      .select('iata_code, name, city, country')
+      .eq('iata_code', iataCode.toUpperCase())
+      .maybeSingle();
+
+    if (result.error) throw result.error;
+    if (!result.data) throw new NotFoundException('Airport not found');
+    return this.toResponse(result.data);
   }
 
   private toResponse(row: AirportRow): AirportResponse {
