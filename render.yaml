@@ -11,7 +11,12 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: corepack enable && corepack prepare --activate && pnpm install --frozen-lockfile && pnpm --filter @aircatch/api build
+    # Not using `corepack enable`/`corepack prepare` — Render's Node 20.18.0
+    # image ships a corepack build that throws
+    # ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING when it tries to load pnpm's
+    # CJS bundle (a known corepack bug, not specific to this app). Installing
+    # pnpm directly via npm sidesteps corepack entirely.
+    buildCommand: npm install -g pnpm@11.22.0 && pnpm install --frozen-lockfile && pnpm --filter @aircatch/api build
     startCommand: pnpm --filter @aircatch/api start:prod
     healthCheckPath: /health
     envVars:
