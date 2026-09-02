@@ -9,6 +9,9 @@ interface Props {
 
 const screenWidth = Dimensions.get('window').width;
 const MAX_POINTS = 12;
+// Showing a date under every point crowds the x-axis once there are more
+// than a handful of points, so only label a subset of them.
+const MAX_LABELS = 5;
 
 export function PriceTrendChart({ history }: Props) {
   if (history.length < 2) {
@@ -24,8 +27,12 @@ export function PriceTrendChart({ history }: Props) {
   const step = Math.max(1, Math.floor(history.length / MAX_POINTS));
   const sampled = history.filter((_, index) => index % step === 0);
 
+  const labelStep = Math.max(1, Math.ceil(sampled.length / MAX_LABELS));
+
   const data = {
-    labels: sampled.map((entry) => formatShortDate(entry.checkedAt)),
+    labels: sampled.map((entry, index) =>
+      index % labelStep === 0 ? formatShortDate(entry.checkedAt) : ''
+    ),
     datasets: [{ data: sampled.map((entry) => entry.price) }],
   };
 
