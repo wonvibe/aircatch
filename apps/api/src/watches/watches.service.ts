@@ -41,6 +41,21 @@ export class WatchesService {
   ) {}
 
   async create(userId: string, dto: CreateWatchDto): Promise<WatchResponse> {
+    // The DTO leaves returnDateFrom/To optional for every trip type (their
+    // legality genuinely depends on tripType, same reasoning as
+    // UpdateWatchDto's comment) — but leaving them silently unenforced
+    // here once let a round_trip watch save with no return dates, which
+    // fare-finder.service.ts's findSimpleFare then quietly priced (and
+    // booking.ts then linked) as one-way instead of round-trip.
+    if (
+      dto.tripType === 'round_trip' &&
+      (!dto.returnDateFrom || !dto.returnDateTo)
+    ) {
+      throw new BadRequestException(
+        'returnDateFrom/returnDateTo are required for round_trip watches',
+      );
+    }
+
     const client = this.supabase.getClient();
 
     const inserted = await client

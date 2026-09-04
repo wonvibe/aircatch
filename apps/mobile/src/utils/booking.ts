@@ -45,6 +45,39 @@ function buildOneWayLegUrl(originIata: string, destinationIata: string, date: st
   return `https://www.google.com/travel/flights?q=${encodeURIComponent(query)}`;
 }
 
+/** "2026-09-16" -> "260916", the date format Skyscanner's path-based URLs use. */
+function toSkyscannerDate(isoDate: string): string {
+  return isoDate.slice(2).replace(/-/g, '');
+}
+
+/**
+ * Skyscanner counterpart to buildBookingSearchUrl, shown alongside it so
+ * one_way/round_trip watches get the same two-site comparison multi_city
+ * already has. Same /transport/flights/{origin}/{dest}/{date}/... path
+ * family as buildMultiCityBookingUrl, just without repeated legs — verified
+ * live (2026-09) against skyscanner.co.kr for both shapes:
+ *   one-way:    /transport/flights/icn/fuk/260916/?...&rtn=0
+ *   round-trip: /transport/flights/icn/fuk/260916/260920/?...&rtn=1
+ */
+export function buildSkyscannerSearchUrl(watch: Watch, latest?: PriceHistoryEntry | null): string {
+  if (watch.tripType === 'multi_city' || !watch.originIata || !watch.destinationIata) {
+    return 'https://www.skyscanner.co.kr/';
+  }
+
+  const origin = watch.originIata.toLowerCase();
+  const destination = watch.destinationIata.toLowerCase();
+  const departDate = toSkyscannerDate(latest?.departDate ?? watch.departDateFrom);
+
+  if (watch.tripType === 'round_trip') {
+    const returnDate = latest?.returnDate ?? watch.returnDateFrom;
+    if (returnDate) {
+      return `https://www.skyscanner.co.kr/transport/flights/${origin}/${destination}/${departDate}/${toSkyscannerDate(returnDate)}/?adultsv2=1&cabinclass=economy&childrenv2=&ref=aircatch&rtn=1`;
+    }
+  }
+
+  return `https://www.skyscanner.co.kr/transport/flights/${origin}/${destination}/${departDate}/?adultsv2=1&cabinclass=economy&childrenv2=&ref=aircatch&rtn=0`;
+}
+
 export interface MultiLegSearchInfo {
   originIata: string;
   destinationIata: string;

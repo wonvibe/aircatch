@@ -17,6 +17,7 @@ import {
   buildMultiCityBookingUrl,
   buildMultiCityGoogleFlightsUrl,
   buildMultiLegSearchInfo,
+  buildSkyscannerSearchUrl,
 } from '../../utils/booking';
 import type { AppStackScreenProps } from '../../navigation/types';
 
@@ -152,11 +153,19 @@ export function PriceDetailScreen({ route, navigation }: AppStackScreenProps<'Pr
             />
           </>
         ) : (
-          <Button
-            label="예매처에서 확인하기"
-            onPress={() => Linking.openURL(buildBookingSearchUrl(watch, history[history.length - 1] ?? null))}
-            style={styles.bookingButton}
-          />
+          <>
+            <Button
+              label="Google Flights에서 확인하기"
+              onPress={() => Linking.openURL(buildBookingSearchUrl(watch, history[history.length - 1] ?? null))}
+              style={styles.bookingButton}
+            />
+            <Button
+              label="Skyscanner에서 확인하기"
+              variant="secondary"
+              onPress={() => Linking.openURL(buildSkyscannerSearchUrl(watch, history[history.length - 1] ?? null))}
+              style={styles.bookingButton}
+            />
+          </>
         )}
         <PriceDisclaimerBanner tripType={watch.tripType} />
 

@@ -31,6 +31,15 @@ export function EditWatchScreen({ route, navigation }: AppStackScreenProps<'Edit
   const [destination, setDestination] = useState<Airport | null>(null);
   const [departDateFrom, setDepartDateFrom] = useState(new Date(watch.departDateFrom));
   const [departDateTo, setDepartDateTo] = useState(new Date(watch.departDateTo));
+  // Pre-existing round_trip watches can have null return dates — see
+  // booking.ts/PriceDetailScreen: without them the backend silently prices
+  // (and links) the watch as one-way. Default to the depart window so
+  // editing one of those watches gives the user a sane starting point to
+  // actually set return dates, fixing the watch in the process.
+  const [returnDateFrom, setReturnDateFrom] = useState(
+    new Date(watch.returnDateFrom ?? watch.departDateFrom),
+  );
+  const [returnDateTo, setReturnDateTo] = useState(new Date(watch.returnDateTo ?? watch.departDateTo));
   const [segments, setSegments] = useState<SegmentDraft[]>([]);
   const [targetPrice, setTargetPrice] = useState(String(watch.targetPrice));
   const [adults, setAdults] = useState(String(watch.adults));
@@ -90,6 +99,10 @@ export function EditWatchScreen({ route, navigation }: AppStackScreenProps<'Edit
       if (!origin || !destination) return '출발지와 도착지를 선택해주세요.';
       if (origin.iataCode === destination.iataCode) return '출발지와 도착지가 같을 수 없어요.';
       if (departDateFrom > departDateTo) return '탐색 시작일이 종료일보다 늦을 수 없어요.';
+      if (watch.tripType === 'round_trip') {
+        if (returnDateFrom > returnDateTo) return '귀국 시작일이 종료일보다 늦을 수 없어요.';
+        if (returnDateFrom < departDateFrom) return '귀국 시작일이 출발 시작일보다 빠를 수 없어요.';
+      }
     } else {
       for (const [i, segment] of segments.entries()) {
         if (!segment.origin || !segment.destination) return `구간 ${i + 1}의 출발/도착지를 선택해주세요.`;
@@ -120,6 +133,12 @@ export function EditWatchScreen({ route, navigation }: AppStackScreenProps<'Edit
               destinationIata: destination!.iataCode,
               departDateFrom: toDateString(departDateFrom),
               departDateTo: toDateString(departDateTo),
+              ...(watch.tripType === 'round_trip'
+                ? {
+                    returnDateFrom: toDateString(returnDateFrom),
+                    returnDateTo: toDateString(returnDateTo),
+                  }
+                : undefined),
             }
           : {
               segments: segments.map((segment, index) => ({
@@ -176,6 +195,29 @@ export function EditWatchScreen({ route, navigation }: AppStackScreenProps<'Edit
                   onChange={setDepartDateTo}
                 />
               </View>
+
+              {watch.tripType === 'round_trip' && (
+                <>
+                  <Text style={styles.sectionLabel}>귀국 기간 (최대 2개월)</Text>
+                  <View style={styles.dateRow}>
+                    <DateField
+                      label="시작일"
+                      value={returnDateFrom}
+                      minimumDate={departDateFrom}
+                      maximumDate={MAX_DATE}
+                      onChange={setReturnDateFrom}
+                      style={styles.dateFieldLeft}
+                    />
+                    <DateField
+                      label="종료일"
+                      value={returnDateTo}
+                      minimumDate={returnDateFrom}
+                      maximumDate={MAX_DATE}
+                      onChange={setReturnDateTo}
+                    />
+                  </View>
+                </>
+              )}
             </>
           ) : (
             <MultiCitySegmentList segments={segments} onChange={setSegments} minDate={TODAY} maxDate={MAX_DATE} />

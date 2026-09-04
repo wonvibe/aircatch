@@ -24,6 +24,8 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
   const [destination, setDestination] = useState<Airport | null>(null);
   const [departDateFrom, setDepartDateFrom] = useState(TODAY);
   const [departDateTo, setDepartDateTo] = useState(MAX_DATE);
+  const [returnDateFrom, setReturnDateFrom] = useState(TODAY);
+  const [returnDateTo, setReturnDateTo] = useState(MAX_DATE);
   const [segments, setSegments] = useState<SegmentDraft[]>([
     { origin: null, destination: null, date: TODAY },
     { origin: null, destination: null, date: TODAY },
@@ -46,6 +48,10 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
     // derived from the segment dates at submit time instead.
     if (tripType !== 'multi_city' && departDateFrom > departDateTo) {
       return '탐색 시작일이 종료일보다 늦을 수 없어요.';
+    }
+    if (tripType === 'round_trip') {
+      if (returnDateFrom > returnDateTo) return '귀국 시작일이 종료일보다 늦을 수 없어요.';
+      if (returnDateFrom < departDateFrom) return '귀국 시작일이 출발 시작일보다 빠를 수 없어요.';
     }
     const price = Number(targetPrice);
     if (!targetPrice || Number.isNaN(price) || price <= 0) return '목표가를 올바르게 입력해주세요.';
@@ -79,6 +85,12 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
         destinationIata: !isMultiCity ? destination!.iataCode : undefined,
         departDateFrom: toDateString(rangeFrom),
         departDateTo: toDateString(rangeTo),
+        ...(tripType === 'round_trip'
+          ? {
+              returnDateFrom: toDateString(returnDateFrom),
+              returnDateTo: toDateString(returnDateTo),
+            }
+          : undefined),
         adults: Number(adults),
         targetPrice: Number(targetPrice),
         segments: isMultiCity
@@ -134,6 +146,29 @@ export function NewWatchScreen({ navigation }: AppStackScreenProps<'NewWatch'>) 
                   minimumDate={departDateFrom}
                   maximumDate={MAX_DATE}
                   onChange={setDepartDateTo}
+                />
+              </View>
+            </>
+          )}
+
+          {tripType === 'round_trip' && (
+            <>
+              <Text style={styles.sectionLabel}>귀국 기간 (최대 2개월)</Text>
+              <View style={styles.dateRow}>
+                <DateField
+                  label="시작일"
+                  value={returnDateFrom}
+                  minimumDate={departDateFrom}
+                  maximumDate={MAX_DATE}
+                  onChange={setReturnDateFrom}
+                  style={styles.dateFieldLeft}
+                />
+                <DateField
+                  label="종료일"
+                  value={returnDateTo}
+                  minimumDate={returnDateFrom}
+                  maximumDate={MAX_DATE}
+                  onChange={setReturnDateTo}
                 />
               </View>
             </>
