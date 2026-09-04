@@ -12,7 +12,12 @@ import { watchesApi } from '../../api/watches';
 import { CalendarDateEntry, PriceHistoryEntry, Watch } from '../../api/types';
 import { colors, spacing, typography } from '../../theme/tokens';
 import { formatDate, formatDateRange, formatPrice, formatRoute, tripTypeLabel } from '../../utils/format';
-import { buildBookingSearchUrl, buildMultiLegSearchInfo } from '../../utils/booking';
+import {
+  buildBookingSearchUrl,
+  buildMultiCityBookingUrl,
+  buildMultiCityGoogleFlightsUrl,
+  buildMultiLegSearchInfo,
+} from '../../utils/booking';
 import type { AppStackScreenProps } from '../../navigation/types';
 
 const HISTORY_DAYS = 60;
@@ -118,27 +123,34 @@ export function PriceDetailScreen({ route, navigation }: AppStackScreenProps<'Pr
         </View>
 
         {watch.tripType === 'multi_city' ? (
-          // Google Flights has no working multi-city query phrasing (see
-          // utils/booking.ts) — one one-way search per leg instead, each
-          // showing the exact date/price it's for so there's no guessing
-          // what to search for on the booking site.
-          buildMultiLegSearchInfo(watch, history[history.length - 1] ?? null).map((leg, index) => (
-            <Card key={`${leg.originIata}-${leg.destinationIata}-${leg.departDate}`} style={styles.legCard}>
-              <Text style={typography.body}>
-                구간 {index + 1}: {leg.originIata} → {leg.destinationIata}
-              </Text>
-              <Text style={styles.legDetail}>
-                {formatDate(leg.departDate)} 출발
-                {leg.price !== null ? ` · ${formatPrice(leg.price, watch.currency)}` : ''}
-              </Text>
-              <Button
-                label="예매처에서 확인하기"
-                variant="secondary"
-                onPress={() => Linking.openURL(leg.url)}
-                style={styles.legButton}
-              />
-            </Card>
-          ))
+          <>
+            {/* Per-leg breakdown is reference-only — the exact date/price
+                each leg's 현재가 came from. Both booking links below search
+                the whole multi-city itinerary at once, on two different
+                sites, so the user can compare. */}
+            {buildMultiLegSearchInfo(watch, history[history.length - 1] ?? null).map((leg, index) => (
+              <Card key={`${leg.originIata}-${leg.destinationIata}-${leg.departDate}`} style={styles.legCard}>
+                <Text style={typography.body}>
+                  구간 {index + 1}: {leg.originIata} → {leg.destinationIata}
+                </Text>
+                <Text style={styles.legDetail}>
+                  {formatDate(leg.departDate)} 출발
+                  {leg.price !== null ? ` · ${formatPrice(leg.price, watch.currency)}` : ''}
+                </Text>
+              </Card>
+            ))}
+            <Button
+              label="Google Flights에서 다구간 통합 검색"
+              onPress={() => Linking.openURL(buildMultiCityGoogleFlightsUrl(watch, history[history.length - 1] ?? null))}
+              style={styles.bookingButton}
+            />
+            <Button
+              label="Skyscanner에서 다구간 통합 검색"
+              variant="secondary"
+              onPress={() => Linking.openURL(buildMultiCityBookingUrl(watch, history[history.length - 1] ?? null))}
+              style={styles.bookingButton}
+            />
+          </>
         ) : (
           <Button
             label="예매처에서 확인하기"
@@ -213,10 +225,6 @@ const styles = StyleSheet.create({
   legDetail: {
     ...typography.bodySecondary,
     marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  legButton: {
-    minHeight: 40,
   },
   sectionTitle: {
     ...typography.subtitle,
